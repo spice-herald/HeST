@@ -44,7 +44,7 @@ print( "Yields at %.1f eV -- Singlet: %i  Triplet: %i   QP: %i " % (energy, q.Si
 #get the CPD response
 
 X, Y, Z = HeST.get_random_position( detector )
-signal = GetCPDSignal(detector, q.SingletPhotons, X, Y, Z )
+signal = HeST.GetCPDSignal(detector, q.SingletPhotons, X, Y, Z )
 
 print( "CPD pulse area = %.1f eV" % signal.area_eV )
 print( "Individual pulse areas: ", signal.chArea_eV )
