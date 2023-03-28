@@ -19,7 +19,6 @@ which will get you all of the functions in src/HeST/HeST.py
 
 ```
 from HeST import HeST
-import numpy as np
 
 # set detector params
 height, length, width = 5., 5., 5
@@ -48,7 +47,7 @@ signal = HeST.GetCPDSignal(detector, q.SingletPhotons, X, Y, Z )
 
 print( "CPD pulse area = %.1f eV" % signal.area_eV )
 print( "Individual pulse areas: ", signal.chArea_eV )
-print( "Coincidence = %i" signal.coincidence )
+print( "Coincidence = %i" % signal.coincidence )
 
 ```
 
