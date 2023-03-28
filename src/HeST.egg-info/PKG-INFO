@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: HeST
-Version: 0.0.2
+Version: 0.0.7
 Summary: A developmental python package for simulating LHe yields from energy deposits. Based on NEST's framework.
 Author-email: Greg Rischbieter <rischbie@umich.edu>
 Project-URL: Homepage, https://github.com/spice-herald/HeST

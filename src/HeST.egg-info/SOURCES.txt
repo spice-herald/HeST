@@ -2,7 +2,6 @@ LICENSE
 README.md
 pyproject.toml
 src/HeST/HeST.py
-src/HeST/VDetector.py
 src/HeST/__init__.py
 src/HeST.egg-info/PKG-INFO
 src/HeST.egg-info/SOURCES.txt
