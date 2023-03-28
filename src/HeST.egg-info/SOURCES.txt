@@ -1,0 +1,10 @@
+LICENSE
+README.md
+pyproject.toml
+src/HeST/HeST.py
+src/HeST/VDetector.py
+src/HeST/__init__.py
+src/HeST.egg-info/PKG-INFO
+src/HeST.egg-info/SOURCES.txt
+src/HeST.egg-info/dependency_links.txt
+src/HeST.egg-info/top_level.txt
