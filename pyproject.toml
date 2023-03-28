@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "HeST"
-version = "0.0.2"
+version = "0.0.7"
 authors = [
   { name="Greg Rischbieter", email="rischbie@umich.edu" },
 ]
