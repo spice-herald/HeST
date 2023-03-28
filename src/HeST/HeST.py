@@ -1,6 +1,6 @@
-import numpy as np
 import scipy.special as scispec
-import VDetector.py
+from VDetector import *
+
 
 #Global constants
 Singlet_PhotonEnergy = 15.5 #eV
