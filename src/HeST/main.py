@@ -2,11 +2,24 @@ import numpy as np
 import Geometry_creation
 import Particle_creation 
 import Energy_partioning 
+import Propagation
+import Reflection
 
 def singlet_steps(detector,Esinglet,x,y,z):
-    singlet=Particle_creation.Singlet4He()
+    
+    N=Particle_creation.Singlet4He().Get_NoOfSinglet(Esinglet)
+    singlet=Particle_creation.Singlet4He(x,y,z)
     #while loop for propagation and reflection till reach the He surface
-    # refraction  
+    while detector.get_which_surface(singlet.get_Position()) != "He_Vaccum_interface" : 
+        
+        singlet.set_Direction(Particle_creation.Get_randomDirection())
+        singlet= Propagation.GetNextsurface(singlet,detector)
+        singlet=Reflection.get_reflection(singlet,detector)
+        #if detector.get_which_surface(singlet.get_Position()) != "He_Al_interace":
+        
+        
+    # refraction
+    singlet=Refraction.get_refraction(singlet,detector)   
 
 
 def triplet_steps(detector,Etriplet,x,y,z):

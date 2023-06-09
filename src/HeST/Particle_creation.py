@@ -12,13 +12,21 @@ def Get_randomDirection():
     nx=np.sin(phi)*np.cos(theta)
     ny=np.sin(phi)*np.sin(theta)
     nz=np.cos(phi)
+    return nx,ny,nz
 
 
 class QuasiParticle4He:
-    def __init__(self):
+    def __init__(self,XPosition, YPosition, ZPosition):
         self.momentum = 0.0
         self.energy   = 0.0
         self.velocity = 0.0
+        self.XPosition = XPosition 
+        self.YPosition = YPosition 
+        self.ZPosition = ZPosition 
+        self.Xdirection = 0.0 
+        self.Ydirection = 0.0 
+        self.Zdirection = 1.0 
+        self.Time = 0.0
         self.momentum_cutoff = 1100
         self.energy_cutoff = 0.00062
         self.momentum_bins = 470 
@@ -35,8 +43,16 @@ class QuasiParticle4He:
         self.energy_cutoff = p1
     def set_momentum_bins(self, p1):
         self.momentum_bins = int(p1)
-
-
+    def set_Position(self, p1, p2, p3):
+        self.XPosition = p1
+        self.YPosition = p2
+        self.ZPosition = p3
+    def set_Direction(self, p1,p2,p3):
+        self.XDirection = p1
+        self.YDirection = p2
+        self.ZDirection = p3
+    def set_Time(self, p1):
+            self.Time = p1
 
     def get_momentum(self):
         return self.momentum
@@ -50,6 +66,13 @@ class QuasiParticle4He:
         return self.energy_cutoff
     def get_momentum_bins(self):
         return int(self.momentum_bins)
+    
+    def get_Position(self):
+        return self.XPosition,self.YPosition,self.ZPosition
+    def get_Direction(self):
+        return self.XDirection, self.YDirection, self.ZDirection 
+    def get_Time(self):
+        return self.Time  
     
     
     
@@ -133,14 +156,31 @@ class QuasiParticle4He:
     
     
 class Singlet4He:
-    def __init__(self):
+    def __init__(self,XPosition, YPosition, ZPosition):
         self.energy         = 16
         self.velocity       = 3e8
+        self.XPosition = XPosition 
+        self.YPosition = YPosition 
+        self.ZPosition = ZPosition 
+        self.Xdirection = 0.0 
+        self.Ydirection = 0.0 
+        self.Zdirection = 1.0 
+        self.Time = 0.0
         
     def set_energy(self, p1):
         self.energy = p1
     def set_velocity(self, p1):
         self.velocity = p1
+    def set_Position(self, p1, p2, p3):
+        self.XPosition = p1
+        self.YPosition = p2
+        self.ZPosition = p3
+    def set_Direction(self, p1,p2,p3):
+        self.XDirection = p1
+        self.YDirection = p2
+        self.ZDirection = p3
+    def set_Time(self, p1):
+            self.Time = p1
 
     def get_energy(self):
         return self.energy
@@ -149,14 +189,27 @@ class Singlet4He:
 
     def Get_NoOfSinglet(self, E):
         return int(E/self.get_energy())
+    def get_Position(self):
+        return self.XPosition,self.YPosition,self.ZPosition
+    def get_Direction(self):
+        return self.XDirection, self.YDirection, self.ZDirection 
+    def get_Time(self):
+        return self.Time 
 
 
 
 class Triplet4He:
-    def __init__(self):
+    def __init__(self,XPosition, YPosition, ZPosition):
         self.energy         = 16
         self.velocity       = 2  
         self.decaytime      = 13 #seconds
+        self.XPosition = XPosition 
+        self.YPosition = YPosition 
+        self.ZPosition = ZPosition 
+        self.Xdirection = 0.0 
+        self.Ydirection = 0.0 
+        self.Zdirection = 1.0 
+        self.Time = 0.0
         
     def set_energy(self, p1):
         self.energy = p1
@@ -164,36 +217,77 @@ class Triplet4He:
         self.velocity = p1
     def set_decaytime(self, p1):
         self.decaytime = p1
+    def set_Position(self, p1, p2, p3):
+        self.XPosition = p1
+        self.YPosition = p2
+        self.ZPosition = p3
+    def set_Direction(self, p1,p2,p3):
+        self.XDirection = p1
+        self.YDirection = p2
+        self.ZDirection = p3
+    def set_Time(self, p1):
+            self.Time = p1
 
     def get_energy(self):
         return self.energy
     def get_velocity(self):
         return self.velocity
     def get_decaytime(self):
-        return self.decaytime
+        return self.decaytime  
+    def get_Position(self):
+        return self.XPosition,self.YPosition,self.ZPosition
+    def get_Direction(self):
+        return self.XDirection, self.YDirection, self.ZDirection 
+    def get_Time(self):
+        return self.Time  
+
 
     def Get_NoOfSinglet(self, E):
         return int(E/self.get_energy())
     
 
 
-    class IR4He:
-        def __init__(self):
-            self.energy         = 0.01
-            self.velocity       = 3e8
+class IR4He:
+    def __init__(self,XPosition, YPosition, ZPosition):
+        self.energy         = 0.01
+        self.velocity       = 3e8
+        self.XPosition = XPosition 
+        self.YPosition = YPosition 
+        self.ZPosition = ZPosition  
+        self.Xdirection = 0.0 
+        self.Ydirection = 0.0 
+        self.Zdirection = 1.0
+        self.Time = 0.0  
         
-        def set_energy(self, p1):
-            self.enenrgy = p1
-        def set_velocity(self, p1):
-            self.velocity = p1
+    def set_energy(self, p1):
+        self.enenrgy = p1
+    def set_velocity(self, p1):
+        self.velocity = p1
+    def set_Position(self, p1, p2, p3):
+        self.XPosition = p1
+        self.YPosition = p2
+        self.ZPosition = p3
+    def set_Direction(self, p1,p2,p3):
+        self.XDirection = p1
+        self.YDirection = p2
+        self.ZDirection = p3
+    def set_Time(self, p1):
+        self.Time = p1
 
-        def get_energy(self):
-            return self.energy
-        def get_velocity(self):
-            return self.velocity
 
-        def Get_NoIR(self, E):
-            return int(E/self.get_energy())
+    def get_energy(self):
+        return self.energy
+    def get_velocity(self):
+        return self.velocity
+    def get_Position(self):
+        return self.XPosition,self.YPosition,self.ZPosition
+    def get_Direction(self):
+        return self.XDirection, self.YDirection, self.ZDirection 
+    def get_Time(self):
+        return self.Time  
+
+    def Get_NoIR(self, E):
+        return int(E/self.get_energy())
 
 
     
