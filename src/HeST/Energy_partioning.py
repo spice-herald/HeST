@@ -88,19 +88,19 @@ def GetEnergyChannelFractions(energy, interaction):
 
     return singlet, triplet, QP, IR
 
-def GetPossianSmeared_energy_in_each_channel(Energy_deposited, singlet_frac, triplet_frac, IR_frac, QP_frac):
+def GetPossianSmeared_energy_in_each_channel(Energy_deposited, singlet_frac, triplet_frac, IR_frac):
     '''
     should provide the Energy_deposited in eV
     '''
-    singlet_photon_mean = Energy_deposited*singlet_frac/Particle_creation.Singlet4He().get_energy()
-    singlet =  np.random.poisson(singlet_photon_mean)*Particle_creation.Singlet4He().get_energy()
+    singlet_photon_mean = Energy_deposited*singlet_frac/Particle_creation.Singlet4He(0,0,0).get_energy()
+    singlet =  np.random.poisson(singlet_photon_mean)*Particle_creation.Singlet4He(0,0,0).get_energy()
 
 
-    IR_photon_mean=Energy_deposited*IR_frac/Particle_creation.IR4He().get_energy()
-    IR =  np.random.poisson(IR_photon_mean)*Particle_creation.IR4He().get_energy() 
+    IR_photon_mean=Energy_deposited*IR_frac/Particle_creation.IR4He(0,0,0).get_energy()
+    IR =  np.random.poisson(IR_photon_mean)*Particle_creation.IR4He(0,0,0).get_energy() 
 
-    triplet_photon_mean=Energy_deposited*triplet_frac/Particle_creation.Triplet4He().get_energy()
-    triplet = np.random.poisson(triplet_photon_mean)*Particle_creation.Triplet4He().get_energy()
+    triplet_photon_mean=Energy_deposited*triplet_frac/Particle_creation.Triplet4He(0,0,0).get_energy()
+    triplet = np.random.poisson(triplet_photon_mean)*Particle_creation.Triplet4He(0,0,0).get_energy()
 
     QP = Energy_deposited-triplet-singlet-IR
 

@@ -1,7 +1,5 @@
 import scipy.special as scispec
 import numpy as np
-import random
-
 
 
 class UMassDetector:
@@ -10,7 +8,7 @@ class UMassDetector:
                  distance_between_CPD_and_Target, targetMaterial, cpdMaterial,BaseMaterial,CurveSurfaceMaterial):
         self.height           = height
         self.radius            = radius
-        self.fill_height       = height #this is only important for Helium 
+        self.fill_height       = fill_height #this is only important for Helium 
         self.nCPDs            = nCPDs
         self.heightCPD        = heightCPD
         self.radiusCPD         = radiusCPD
@@ -19,11 +17,11 @@ class UMassDetector:
         self.cpdMaterial         = cpdMaterial
         self.BaseMaterial         = BaseMaterial
         self.CurveSurfaceMaterial = CurveSurfaceMaterial
-        print("A Umass version 1 type detector has been constructed\n")
-        print("targetMaterial  : {0} modeled as cyclinder with radius {1}mm and height {2}mm\n".format(targetMaterial,radius,height))
+        print("\n\n\nA Umass version 1 type detector has been constructed\n")
+        print("targetMaterial  : {0} modeled as cyclinder with radius {1}mm and height {2}mm".format(targetMaterial,radius,height))
         print("SensorMaterial  : {0} modeled as cylinder with radius {1}mm and height {2}mm at distance of {3}mm from target top".format(cpdMaterial, radiusCPD,heightCPD,distance_between_CPD_and_Target))
-        print("And has {0} sensor".format(nCPDs))
-        print("Helium is stored in a {0} vessel that has a {1} layer at the bottom".format(BaseMaterial,CurveSurfaceMaterial))
+        print("Configuration has {0} sensor".format(nCPDs))
+        print("Helium is stored in a {0} vessel that has a {1} layer at the bottom\n".format(CurveSurfaceMaterial,BaseMaterial))
 
     def set_height(self, p1):
         self.height = p1
@@ -73,28 +71,46 @@ class UMassDetector:
         return self.CurveSurfaceMaterial
  
 
-    def get_which_surface(self,x,y,z):
-        if z==self.get_fill_height() and x**2+y**2 < self.get_radius() * self.get_radius():
+    def get_which_surface(self,position):
+        #print(round((position[0]**2+position[1]**2)[0]),int(self.get_radius()*self.get_radius()),(int(self.get_radius()*self.get_radius())==round((position[0]**2+position[1]**2)[0])))
+        if position[2]==self.get_fill_height() and round((position[0]**2+position[1]**2)[0]) < self.get_radius() * self.get_radius():
             status="He_Vaccum_interface"
             return status 
-        if z==0 and x**2+y**2 < self.get_radius() * self.get_radius():
+        elif position[2]==0 and round((position[0]**2+position[1]**2)[0]) < self.get_radius() * self.get_radius():
             #include here more if statement so as to make the right geometry if the base has CPD 
             status="He_Al_interace"
             return status 
-        if z > 0 and z < self.get_fill_height() and x**2+y**2 == self.get_radius() * self.get_radius():
+        elif position[2]==self.get_height():
+            status="Cu_Vessel_Rim"
+            return status 
+        elif ((position[2] > 0 and position[2] < self.get_fill_height() ) and round((position[0]**2+position[1]**2)[0]) == int(self.get_radius()*self.get_radius())):
             status="He_Cu_interface"
             return status 
-        if z == self.get_fill_height() + self.get_distance_between_CPD_and_Target() and x**2+y**2 == self.get_radiusCPD() * self.get_radiusCPD():
+        elif ((position[2] > self.get_fill_height() and position[2] < self.get_height() ) and round((position[0]**2+position[1]**2)[0]) == int(self.get_radius()*self.get_radius())):
+            status="Vacumm_Cu_interface"
+            return status 
+        elif (position[2] > 0 and position[2] < self.get_fill_height() and round((position[0]**2+position[1]**2)[0]) < int(self.get_radius()*self.get_radius())):
+            status="Inside Helium"
+            return status 
+        elif position[2] == self.get_height() + self.get_distance_between_CPD_and_Target() and round((position[0]**2+position[1]**2)[0]) < int(self.get_radiusCPD() * self.get_radiusCPD()):
             status="CPD" 
-            return status    
-        return "Unknown"
+            return status  
+        elif position[2] == self.get_height() + self.get_distance_between_CPD_and_Target() and round((position[0]**2+position[1]**2)[0]) > int(self.get_radiusCPD() * self.get_radiusCPD()):
+            status="outside_CPD" 
+            return status   
+        else:
+            print(position[0]**2+position[1]**2,position[2])
+            #return "Unknown"
+            raise Exception("Unkown interface")
     
     def get_Material_of_Surface(self,status):
         if status=="He_Al_interace":
             return self.get_BaseMaterial()
-        if status=="He_Cu_interface":
+        if status=="He_Cu_interface" or status=="Vacumm_Cu_interface":
             #include here more if statement so as to make the right geometry 
             return self.get_CurveSurfaceMaterial()
+        if status=="Inside Helium" or status=="He_Vaccum_interface":
+            return self.get_targetMaterial()
         if status=="CPD":
             return self.get_cpdMaterial()
         return "Unknown" 
@@ -108,6 +124,12 @@ class UMassDetector:
         R = r * np.sqrt(np.random.uniform(low=0,high=1,size=np.size(N)))
         theta = np.random.uniform(low=0, high=1,size=np.size(N)) * 2 * np.pi
         return R*np.cos(theta), R*np.sin(theta), Z
+    
+    def get_random_direction_in_Target(self,N):
+        phi= 2*np.pi*np.random.uniform(low=0, high=1,size=np.size(N)) #0 to 2*pi
+        theta = np.arccos(np.random.uniform(low=-1, high=1,size=np.size(N)) ) #0 to pi
+        return np.sin(theta)*np.cos(phi), np.sin(theta)*np.sin(phi), np.cos(theta)
+
     
     
 if __name__ == "__main__":
