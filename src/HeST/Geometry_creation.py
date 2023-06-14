@@ -73,10 +73,10 @@ class UMassDetector:
 
     def get_which_surface(self,position):
         #print(round((position[0]**2+position[1]**2)[0]),int(self.get_radius()*self.get_radius()),(int(self.get_radius()*self.get_radius())==round((position[0]**2+position[1]**2)[0])))
-        if position[2]==self.get_fill_height() and round((position[0]**2+position[1]**2)[0]) < self.get_radius() * self.get_radius():
+        if position[2]==self.get_fill_height() and round((position[0]**2+position[1]**2)[0]) <= self.get_radius() * self.get_radius():
             status="He_Vaccum_interface"
             return status 
-        elif position[2]==0 and round((position[0]**2+position[1]**2)[0]) < self.get_radius() * self.get_radius():
+        elif position[2]==0 and round((position[0]**2+position[1]**2)[0]) <= self.get_radius() * self.get_radius():
             #include here more if statement so as to make the right geometry if the base has CPD 
             status="He_Al_interace"
             return status 
@@ -92,16 +92,16 @@ class UMassDetector:
         elif (position[2] > 0 and position[2] < self.get_fill_height() and round((position[0]**2+position[1]**2)[0]) < int(self.get_radius()*self.get_radius())):
             status="Inside Helium"
             return status 
-        elif position[2] == self.get_height() + self.get_distance_between_CPD_and_Target() and round((position[0]**2+position[1]**2)[0]) < int(self.get_radiusCPD() * self.get_radiusCPD()):
+        elif position[2] == self.get_height() + self.get_distance_between_CPD_and_Target() and round((position[0]**2+position[1]**2)[0]) <= int(self.get_radiusCPD() * self.get_radiusCPD()):
             status="CPD" 
             return status  
         elif position[2] == self.get_height() + self.get_distance_between_CPD_and_Target() and round((position[0]**2+position[1]**2)[0]) > int(self.get_radiusCPD() * self.get_radiusCPD()):
             status="outside_CPD" 
             return status   
         else:
-            print(position[0]**2+position[1]**2,position[2])
-            #return "Unknown"
-            raise Exception("Unkown interface")
+            #print(position[0]**2+position[1]**2,position[2])
+            return "Unknown"
+            #raise Exception("Unkown interface")
     
     def get_Material_of_Surface(self,status):
         if status=="He_Al_interace":

@@ -58,6 +58,10 @@ def GetReflection(particle,detector, where_is_Particle):
         Material_build = Material.For_Singlet_Triplet[detector.get_Material_of_Surface(where_is_Particle)] 
     elif particle.type == 'IR':  
         Material_build = Material.For_IR[detector.get_Material_of_Surface(where_is_Particle)]  
+    elif detector.get_Material_of_Surface(where_is_Particle) == "Unknown":
+        position= particle.get_Position() 
+        print(particle.get_Position(),round((position[0]**2+position[1]**2)[0]) <= detector.get_radius() * detector.get_radius())
+        raise Exception("Unkown interface")
     else:
         Material_build = Material.For_QP[detector.get_Material_of_Surface(where_is_Particle)]
 
