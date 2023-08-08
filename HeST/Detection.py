@@ -1,7 +1,8 @@
 from scipy.interpolate import interpn
 import numpy as np
-from .HeST_Core import CPD_Signal 
+from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity 
 from .HeST_Core import Singlet_PhotonEnergy
+
 class VCPD:
     def __init__(self, surface_condition, baselineNoise, phononConversion=0.25):
         '''
