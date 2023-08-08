@@ -7,7 +7,7 @@ This is an early developmental version of a yields simulation package. Further d
 
 In the terminal, simply use: 
 
-`pip install HeST`
+`pip install HeST==0.1.1`
 
 Then in your python scripts you can use: 
 
@@ -30,6 +30,13 @@ This is recommended simply so that the user has access to the source files, see 
 ## Simple Example
 
 A jupyter notebook, "ExampleUsage.ipynb" has been included for an example of how to generate events.
+
+## Map generation
+
+Detector geometries require light collection efficiency (LCE) and QP evaporation (QPE) maps to speed up the yields generation. 
+An example detector geometry (using the Amherst design) has been included. The "map_generation" directory has example scripts
+for how these maps were generated. It's recommended to run these in an environment where you can submit jobs with many nodes, such as 
+NERSC or Great Lakes. 
 
 ## Help
 
