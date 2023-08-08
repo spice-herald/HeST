@@ -1,0 +1,15 @@
+LICENSE
+README.md
+setup.py
+HeST/Amherst_Example_Detector.py
+HeST/Detection.py
+HeST/HeST_Core.py
+HeST/LCE_map_amherstExample_41x41x30_noReflections.npy
+HeST/QP_map_amherstExample_41x41x30_noReflections.npy
+HeST/WIMP_Generation.py
+HeST/__init__.py
+HeST.egg-info/PKG-INFO
+HeST.egg-info/SOURCES.txt
+HeST.egg-info/dependency_links.txt
+HeST.egg-info/requires.txt
+HeST.egg-info/top_level.txt
