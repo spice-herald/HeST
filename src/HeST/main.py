@@ -29,7 +29,7 @@ def singlet_steps(detector,Esinglet,x,y,z,N):
         if singlet.get_Alive_Status()=="Alive":       
             #refraction some day one might include refraction 
             singlet= Propagation.FromCuVesselRim_To_Sensor(singlet,detector,detector.get_height()+detector.get_distance_between_CPD_and_Target()) 
-            #print(singlet.get_Position())
+        print(singlet.get_energy())
     detected_time[i]=singlet.get_Time()*1e6 #sec to microseconds 
     detected_energy[i]=singlet.get_energy()
     return detected_time, detected_energy
