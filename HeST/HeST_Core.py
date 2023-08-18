@@ -155,8 +155,8 @@ def GetQuanta(energy, interaction):
         QP_energy += scint_energy - scint_energy_actual 
         nQP_actual = max([0, int(Get_Quasiparticles(QP_energy))])
     else:
-        nSing_actual = 0.
-        nTrip_actual = 0.
+        nSing_actual = 0
+        nTrip_actual = 0
         QP_energy = energy
         nQP = int(Get_Quasiparticles(QP_energy))
         nQP_actual = max([0, int( np.random.normal(nQP, np.sqrt(Fano*nQP)) )])
