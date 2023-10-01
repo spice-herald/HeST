@@ -484,8 +484,9 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
     for n in range(photons):
         hit, arrival_time, n, xs, ys, zs = photon_propagation([X, Y, Z], conditions, detector.get_photon_reflection_prob())
-        nHits += hit
-        arrivalTimes.append( arrival_time )
+        if hit > 0.5:
+            nHits += hit
+            arrivalTimes.append( arrival_time )
     area = nHits*Singlet_PhotonEnergy
     
     #add in baseline noise for each detected photon
@@ -540,8 +541,9 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
     for n in range(QPs):
         hit, arrival_time, n, xs, ys, zs, p, surf = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff())
-        nHits += hit
-        arrivalTimes.append( arrival_time )
+        if hit > 0.5:
+            nHits += hit
+            arrivalTimes.append( arrival_time )
     area = nHits*detector.get_adsorption_gain()
     
     #add in baseline noise for each detected photon
