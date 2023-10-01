@@ -108,13 +108,13 @@ class VDetector:
     def add_CPD(self, p1):
         self.CPDs.append( p1 )
         
-    def set_liquid_surface( f1 ):
+    def set_liquid_surface(self, f1):
         self.liquid_surface = f1
-    def set_liquid_conditions( f1 ):
+    def set_liquid_conditions(self, f1):
         self.liquid_conditions = f1
-    def set_adsorption_gain( p1 ):
+    def set_adsorption_gain( self, p1 ):
         self.adsorption_gain = p1
-    def set_evaporation_eff( p1 ):
+    def set_evaporation_eff( self, p1 ):
         self.evaporation_eff = p1
         
         
