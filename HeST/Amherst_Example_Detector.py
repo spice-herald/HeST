@@ -40,7 +40,7 @@ def liquid_conditions(x, y, z):
     bottom = 0. #cm
     return ((x*x + y*y < radius*radius) & (z < height) & (z > bottom))
     
-DetectorExample_Amherst = detection.VDetector( [wall_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions, adsorption_gain=6.0, evaporation_eff=0.60, CPDs=[cpd] )
+DetectorExample_Amherst = detection.VDetector( [wall_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions, adsorption_gain=6.0e-3, evaporation_eff=0.60, CPDs=[cpd] )
 DetectorExample_Amherst.load_LCEmap(os.path.dirname(__file__)+'/LCE_map_amherstExample_41x41x30_noReflections.npy')
 DetectorExample_Amherst.set_LCEmap_positions([np.linspace(-3., 3., 41), np.linspace(-3., 3., 41), np.linspace(0., 2.75, 30)])
 DetectorExample_Amherst.load_QPEmap(os.path.dirname(__file__)+'/QP_map_amherstExample_41x41x30_noReflections.npy')
