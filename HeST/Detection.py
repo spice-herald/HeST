@@ -328,8 +328,7 @@ def evaporation(momentum, energy, velocity, direction):
         return 0., 0., 0., 0., 0.
     Velocity_He_atom=np.sqrt( 2.*(energy-Eb)/(mass) )*c
     
-    #sin_theta_R = (velocity/c)*np.sin((theta))/np.sqrt( 2*(energy-Eb)/(mass) )
-    sin_theta_R = (momentum/1000.)*np.sin(theta)/np.sqrt(2.*mass*(energy-Eb)) #Eq 2.18 from Adams thesis
+    sin_theta_R = (velocity/c)*np.sin((theta))/np.sqrt( 2*(energy-Eb)/(mass) ) #Eq 2.18 from Adams thesis (q = mv/hbar*c)
     theta_R = np.arcsin(sin_theta_R)
     new_Vz=Velocity_He_atom*np.cos(theta_R)
     if direction[1] == 0.:
@@ -382,7 +381,7 @@ def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60):
             if  (evap < 0.5) or (np.random.random() > evap_eff ):
                 return 0, total_time, n, xs, ys, zs, momentum, surface_type, -999
             else:
-                Z1 *= 1.005 #just above the liquid surface
+                Z1 += 0.1 #increment just above the liquid surface
                 start = [X1, Y1, Z1]
                 evaporated = True
                 continue

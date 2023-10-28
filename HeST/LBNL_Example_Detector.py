@@ -114,7 +114,7 @@ def wall_conditions(x, y, z):
     topPos = -2.791 #cm
     det_Zoffset = 3.0 #cm
     Z_correction = 0 #cm
-    return ~((x*x + y*y > radius*radius)) , boundary_type
+    return (x*x + y*y < radius*radius) , boundary_type
 
 def top_conditions(x,y,z):
     boundary_type = "Z"
@@ -123,7 +123,7 @@ def top_conditions(x,y,z):
     topPos = -2.791 #cm
     det_Zoffset = 3.0 #cm
     Z_correction = 0 #cm
-    return z < topPos + det_Zoffset + Z_correction, boundary_type
+    return (z < topPos + det_Zoffset + Z_correction), boundary_type
 
 def bottom_conditions(x, y, z):
     boundary_type = "Z"
@@ -132,7 +132,7 @@ def bottom_conditions(x, y, z):
     topPos = -2.791 #cm
     det_Zoffset = 3.0 #cm
     Z_correction = 0 #cm
-    return z > bottomPos + det_Zoffset + Z_correction, boundary_type
+    return (z > bottomPos + det_Zoffset + Z_correction), boundary_type
 
 
 def liquid_surface(x, y, z):
