@@ -4,6 +4,7 @@ setup.py
 HeST/Amherst_Example_Detector.py
 HeST/Detection.py
 HeST/HeST_Core.py
+HeST/LBNL_Example_Detector.py
 HeST/LCE_map_amherstExample_41x41x30_noReflections.npy
 HeST/QP_map_amherstExample_41x41x30_noReflections.npy
 HeST/WIMP_Generation.py

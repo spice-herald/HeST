@@ -1,13 +1,18 @@
 import HeST as hest
 import numpy as np
 import multiprocessing as mp
+import sys
 
 '''
 This script takes an example detector, and generates an LCE map using multiprocessing
+You can either import an example from HeST, or you can define one, as commented out below
 '''
 
+detector = hest.LBNL_Example_Detector.DetectorExample_LBNL
+
+'''
 def sensor_conditions(x, y, z):
-    boundary_type = "CPD"
+    boundary_type = "CPD0"
     radius = 3.8
     height = 3.3
     return (x*x + y*y < radius*radius) & (z < height) | (x*x + y*y >= radius*radius) , boundary_type
@@ -41,55 +46,64 @@ def liquid_conditions(x, y, z):
 
 #create the detector using the conditions above
 detector = hest.VDetector( [wall_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions,
-                                adsorption_gain=6.0, evaporation_eff=0.60, CPDs=[cpd],
+                                adsorption_gain=6.0e-3, evaporation_eff=0.60, CPDs=[cpd],
                                 photon_reflection_prob=0., QP_reflection_prob=0.)
 
-#Define the map's attributes.... 
-filestring = "QPE_map_amherstExample_41x41x30_noReflections"
-nBins = [41, 41, 30]
-radius = 3.
-level = 2.75
+'''
+
+try:
+    z_slice = float(sys.argv[1])
+except:
+    print("Error! This script requires a z position to be input at run time!")
+    exit()
+
+#Define the map's attributes....
+#Define the map's attributes....
+filestring = "QPE_map_lbnlExample_41x41_z"+str(z_slice)+"_noReflections"
+nBins = [51, 51]
+radius = 2.4
+bottomPos = -8.407 #cm
+topPos = -2.791 #cm
+det_Zoffset = 3.0 #cm
+Z_correction = 0 #cm
 x = np.linspace(-radius, radius, nBins[0])
 y = np.linspace(-radius, radius, nBins[1])
-z = np.linspace(0, level, nBins[2])
-m = np.zeros((len(x), len(y), len(z)), dtype=float)
 
-nQPs = 20000
+
+
+print("making map at z=%.5f" % z_slice)
+
+nQPs = 200000
 reflection_prob = detector.get_QP_reflection_prob()
 
-def fill_XY_array(zz):
-
-    result = np.zeros((len(x), len(y)), dtype=float)
+def fill_XY_array(z_pos):
+    nCPDs = detector.get_nCPDs()
+    result = np.zeros((len(x), len(y), nCPDs), dtype=float)
     conditions = detector.get_surface_conditions()
-    conditions.append( detector.get_liquid_surface() )
-    for i in range(detector.get_nCPDs()):
+    conditions.append( detector.liquid_surface )
+    for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
     for xx in range(len(x)):
-        print("%i: %i / %i" % (zz, xx, len(x)))
+        print("%.5f: %i / %i" % (z_pos, xx, len(x)))
         for yy in range(len(y)):
 
-           hitProbs = 0
-           pos = [x[xx], y[yy], z[zz]]
+           hitProbs = [0.]*nCPDs
+           pos = [x[xx], y[yy], z_pos]
            #check if the position is within the liquid volume
            if detector.get_liquid_conditions()(*pos) == False:
                continue
 
            for n in range(nQPs):
-               hit, total_time, n, xs, ys, zs, p, surf = hest.QP_propagation(pos, conditions, reflection_prob)
-               hitProbs += hit
+               hit, arrival_time, n, xs, ys, zs, p, surf, cpd_id = hest.QP_propagation(pos, conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff())
+               if hit > 0.5:
+                   hitProbs[cpd_id] += 1.
 
-           hitProbs = hitProbs/nPhotons
+           hitProbs = np.array(hitProbs)/nQPs
 
            result[xx][yy] = hitProbs
     return result
 
-with mp.Pool() as pool:
-    # Map the fill_2D_matrix function to each z index in parallel
-    results = pool.map(fill_XY_array, range(len(z)))
-
-for z_index, result in enumerate(results):
-    m[:, :, z_index] = result
+m = fill_XY_array(z_slice)
 
 np.save(filestring+".npy", m)
 print("Saved map to %s.npy" % filestring)
-
