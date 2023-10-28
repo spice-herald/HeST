@@ -7,7 +7,7 @@ This is an early developmental version of a yields simulation package. Further d
 
 In the terminal, simply use: 
 
-`pip install HeST==0.1.1`
+`pip install HeST==0.1.2`
 
 Then in your python scripts you can use: 
 
@@ -34,9 +34,15 @@ A jupyter notebook, "ExampleUsage.ipynb" has been included for an example of how
 ## Map generation
 
 Detector geometries require light collection efficiency (LCE) and QP evaporation (QPE) maps to speed up the yields generation. 
-An example detector geometry (using the Amherst design) has been included. The "map_generation" directory has example scripts
+Example detector geometry (Amherst and LBNL designs) have been included. The "map_generation" directory has example scripts
 for how these maps were generated. It's recommended to run these in an environment where you can submit jobs with many nodes, such as 
 NERSC or Great Lakes. 
+
+To run these scripts, verify that `LCEmap_2DmapFromZ.py` and `QPEmap_2DmapFromZ.py` are using the proper detector geometry, and the X,Y binning is 
+set properly. 
+Then, make sure that the script `processMapsInParallel.py` uses the right Z binning. Running 
+    ``` python processMapsInParallel.py LCEmap_2DmapFromZ```
+will submit one 2D map-making job for each z-bin. You can then use the script `Merge2DMaps.py` to combine the parallel outputs into a single numpy array. 
 
 ## Help
 

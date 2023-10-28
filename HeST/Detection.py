@@ -60,7 +60,7 @@ class VDetector:
         liquid_surface:     A function that tracks where the liquid surface is, similar to the surface conditions above. This is used in QP propagation/evaporation calculations.
                             The surfaceType here must be "Liquid"
         liquid_conditions:  A function returning true if the X,Y,Z position is inside the LHe volume, and False if outside the volume
-        
+
         CPDs:               A list of VCPD objects to keep track of
         
         adsorption_gain:    Added energy from adsorption of evaporated QPs, per QP, in eV
@@ -182,9 +182,10 @@ class VDetector:
         print("Creating LCE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_LCEmap_positions( [x, y, z] )
-        m = np.zeros((len(x), len(y), len(z)), dtype=float)
+        nCPDs = self.get_nCPDs()
+        m = np.zeros((len(x), len(y), len(z), nCPDs), dtype=float)
         conditions = self.get_surface_conditions()
-        for i in range(self.get_nCPDs()):
+        for i in range(nCPDs):
             conditions.append( (self.get_CPD(i)).get_surface_condition() )
         
         refl_prob = self.get_photon_reflection_prob()
@@ -193,17 +194,19 @@ class VDetector:
             for yy in range(len(y)):
                 for zz in range(len(z)):
                     
-                    hitProbs = 0
                     pos = np.array([x[xx], y[yy], z[zz]])
                     if (self.get_liquid_conditions())(*pos) == False:
                         continue
+                    hitProbs = [0.]*nCPDs
                     for n in range(nPhotons):
                     
-                        hit, arrival_time, n, xs, ys, zs = photon_propagation(pos, conditions, refl_prob)
-                        hitProbs += hit
+                        hit, arrival_time, n, xs, ys, zs, cpd_id = photon_propagation(pos, conditions, refl_prob)
+                        if hit > 0:
+                            hitProbs[cpd_id] += 1.
+                        
                         
                                 
-                    hitProbs = hitProbs/nPhotons
+                    hitProbs = np.array(hitProbs)/nPhotons
                     
                     m[xx][yy][zz] = hitProbs
                     #print(hitProbs)
@@ -230,10 +233,11 @@ class VDetector:
         print("Creating QPE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_QPEmap_positions( [x, y, z] )
-        m = np.zeros((len(x), len(y), len(z)), dtype=float)
+        nCPDs = self.get_nCPDs()
+        m = np.zeros((len(x), len(y), len(z), nCPDs), dtype=float)
         conditions = self.get_surface_conditions()
         conditions.append( self.liquid_surface )
-        for i in range(self.get_nCPDs()):
+        for i in range(nCPDs):
             conditions.append( (self.get_CPD(i)).get_surface_condition() )
         
         refl_prob = self.get_QP_reflection_prob()
@@ -242,17 +246,18 @@ class VDetector:
             for yy in range(len(y)):
                 for zz in range(len(z)):
                     
-                    hitProbs = 0
                     pos = np.array([x[xx], y[yy], z[zz]])
                     if (self.get_liquid_conditions())(*pos) == False:
                         continue
+                    hitProbs = [0.]*nCPDs
                     for n in range(nQPs):
 
-                        hit, time, n, xs, ys, zs, p, surf = QP_propagation(pos, conditions, refl_prob, evap_eff=self.evaporation_eff)
-                        hitProbs += hit
+                        hit, time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation(pos, conditions, refl_prob, evap_eff=self.evaporation_eff)
+                        if hit > 0:
+                            hitProbs[cpd_id] += 1.
                         
                                 
-                    hitProbs = hitProbs/nQPs
+                    hitProbs = np.array(hitProbs)/nQPs
                     
                     m[xx][yy][zz] = hitProbs
                     #print(hitProbs)
@@ -355,15 +360,16 @@ def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60):
     xs, ys, zs = [start[0]], [start[1]], [start[2]]
     momentum = Random_QPmomentum() #keV/c
     if momentum < 1.1:
-        return 0, total_time, n, xs, ys, zs, momentum, None
+        return 0, total_time, n, xs, ys, zs, momentum, None, -999
     velocity = QP_velocity(momentum) #m/s
     #print(velocity)
     energy = QP_dispersion(momentum) #eV
+    evaporated = False
     while True:
         n+=1
         X1, Y1, Z1, surface_type = find_surface_intersection(start, [dx, dy, dz], conditions)
         if surface_type == None:
-            return 0, total_time, n, xs, ys, zs, momentum, None
+            return 0, total_time, n, xs, ys, zs, momentum, None, -999
         xs.append(X1)
         ys.append(Y1)
         zs.append(Z1)
@@ -374,17 +380,21 @@ def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60):
             #print("Liquid", velocity)
             #if evap < 0.5:
             if  (evap < 0.5) or (np.random.random() > evap_eff ):
-                return 0, total_time, n, xs, ys, zs, momentum, surface_type
+                return 0, total_time, n, xs, ys, zs, momentum, surface_type, -999
             else:
-                Z1 = 2.77 #just above the liquid surface
+                Z1 *= 1.005 #just above the liquid surface
                 start = [X1, Y1, Z1]
+                evaporated = True
                 continue
             
         if "CPD" in surface_type:
-            return 1, total_time, n, xs, ys, zs, momentum, surface_type
+            cpd_id = int(surface_type.split("CPD")[-1])
+            if evaporated == True:
+                return 1, total_time, n, xs, ys, zs, momentum, surface_type, cpd_id
+            return 0, total_time, n, xs, ys, zs, momentum, surface_type, cpd_id
         r = np.random.random()
         if r > reflection_prob:
-            return 0, total_time, n, xs, ys, zs, momentum, surface_type
+            return 0, total_time, n, xs, ys, zs, momentum, surface_type, -999
         if surface_type == "X":
             dx *= -1.
         if surface_type == "Y":
@@ -415,16 +425,17 @@ def photon_propagation(start, conditions, reflection_prob):
         n+=1
         X1, Y1, Z1, surface_type = find_surface_intersection(start, [dx, dy, dz], conditions)
         if surface_type == None:
-            return 0,total_time, n, xs, ys, zs
+            return 0,total_time, n, xs, ys, zs, -999
         xs.append(X1)
         ys.append(Y1)
         zs.append(Z1)
         total_time += np.sqrt(pow(X1-start[0],2.)+pow(Y1-start[1], 2.)+pow(Z1-start[2],2.))/velocity
         if "CPD" in surface_type:
-            return 1, total_time, n, xs, ys, zs
+            cpd_id = int(surface_type.split("CPD")[-1])
+            return 1, total_time, n, xs, ys, zs, cpd_id
         r = np.random.random()
         if r > reflection_prob:
-            return 0, total_time, n, xs, ys, zs
+            return 0, total_time, n, xs, ys, zs, -999
         if surface_type == "X":
             dx *= -1.
         if surface_type == "Y":
@@ -459,44 +470,45 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     if type(detector.get_LCEmap()) == int:
         useMap = False
         
-    nHits = 0
-    arrivalTimes = []
-    
     nCPDs = detector.get_nCPDs()
-        
+    nHitsPerCPD = [0]*nCPDs
+    arrivalTimes = []
+    chAreas = [0.]*nCPDs
     #check to see if a map is loaded
     if useMap:
-        hitProbability = detector.get_photon_hits( X, Y, Z)
-        nHits = np.random.binomial(photons, hitProbability)
-        
-        area = nHits*Singlet_PhotonEnergy
+        hitProbabilities = detector.get_photon_hits( X, Y, Z)
+        coincidence = 0
         for i in range(nCPDs):
+            nHits = np.random.binomial(photons, hitProbabilities[i])
+            coincidence += min([nHits, 1]) # 0 or 1
+            chAreas[i] = nHits*Singlet_PhotonEnergy
             thisCPD = detector.get_CPD(i)
             noiseBaseline = thisCPD.get_baselineNoise()
             noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
-            area += np.sum(noise)
+            chAreas[i] += np.sum(noise)
             
-        return CPD_Signal(area, arrivalTimes)
+        return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
     
     #if the map hasn't been loaded or we want arrival times...
     conditions = detector.get_surface_conditions()
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
     for n in range(photons):
-        hit, arrival_time, n, xs, ys, zs = photon_propagation([X, Y, Z], conditions, detector.get_photon_reflection_prob())
+        hit, arrival_time, n, xs, ys, zs, cpd_id = photon_propagation([X, Y, Z], conditions, detector.get_photon_reflection_prob())
         if hit > 0.5:
-            nHits += hit
+            nHitsPerCPD[cpd_id] += hit
             arrivalTimes.append( arrival_time )
-    area = nHits*Singlet_PhotonEnergy
-    
+    coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
+        chAreas[i] = nHitsPerCPD[i]*Singlet_PhotonEnergy
+        coincidence += min([nHitsPerCPD[i], 1]) # 0 or 1
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
-        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
-        area += np.sum(noise)     
+        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHitsPerCPD[i])
+        chAreas[i] += np.sum(noise)     
         
-    return CPD_Signal(area, arrivalTimes)  
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)  
 
 
 
@@ -515,24 +527,25 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
     if type(detector.get_QPEmap()) == int:
         useMap = False
         
-    nHits = 0
-    arrivalTimes = []
-    
     nCPDs = detector.get_nCPDs()
-        
+    nHitsPerCPD = [0]*nCPDs
+    arrivalTimes = []
+    chAreas = [0.]*nCPDs
     #check to see if a map is loaded
     if useMap:
-        hitProbability = detector.get_QP_hits(X, Y, Z)
-        nHits = np.random.binomial(QPs, hitProbability)
+        hitProbabilities = detector.get_QP_hits( X, Y, Z)
+        coincidence = 0    
         
-        area = nHits*detector.get_adsorption_gain()
         for i in range(nCPDs):
+            nHits = np.random.binomial( QPs, hitProbabilities[i] )
+            coincidence += min([nHits, 1]) # 0 or 1
+            chAreas[i] = nHits * detector.get_adsorption_gain()
             thisCPD = detector.get_CPD(i)
             noiseBaseline = thisCPD.get_baselineNoise()
             noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
-            area += np.sum(noise)
+            chAreas[i] += np.sum(noise)
             
-        return CPD_Signal(area, arrivalTimes)
+        return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
     
     #if the map hasn't been loaded or we want arrival times...
     conditions = detector.get_surface_conditions()
@@ -540,18 +553,20 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
     for n in range(QPs):
-        hit, arrival_time, n, xs, ys, zs, p, surf = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff())
+        hit, arrival_time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff())
         if hit > 0.5:
-            nHits += hit
+            nHitsPerCPD[cpd_id] += hit
             arrivalTimes.append( arrival_time )
-    area = nHits*detector.get_adsorption_gain()
     
+    coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
+        chAreas[i] = nHitsPerCPD[i]*detector.get_adsorption_gain()
+        coincidence += min([nHitsPerCPD[i], 1]) # 0 or 1
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
-        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
-        area += np.sum(noise)     
+        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHitsPerCPD[i])
+        chAreas[i] += np.sum(noise)     
         
-    return CPD_Signal(area, arrivalTimes) 
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes) 
 

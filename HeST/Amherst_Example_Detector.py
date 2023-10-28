@@ -8,7 +8,7 @@ import numpy as np
 # a CPD, or a wall, and how it may reflect off of a given wall.
 
 def sensor_conditions(x, y, z):
-    boundary_type = "CPD"
+    boundary_type = "CPD0"
     radius = 3.8
     height = 3.3
     return (x*x + y*y < radius*radius) & (z < height) | (x*x + y*y >= radius*radius) , boundary_type
