@@ -158,4 +158,17 @@ DetectorExample_LBNL = detection.VDetector( [wall_conditions, top_conditions, bo
                                 adsorption_gain=6.0, evaporation_eff=0.60, CPDs=[cpd1, cpd2, cpd3, cpd4, cpd5, cpd6, cpd7, cpd8],
                                 photon_reflection_prob=0., QP_reflection_prob=0.)
 
+radius = 2.381
+bottomPos = -8.407 #cm
+topPos = -2.791 #cm
+det_Zoffset = 3.0 #cm
+Z_correction = 0 #cm
+height = 2.75
 
+nBins = 30
+z_slices = np.linspace(det_Zoffset+Z_correction+bottomPos, det_Zoffset+Z_correction+bottomPos+height, nBins)
+
+DetectorExample_Amherst.load_LCEmap(os.path.dirname(__file__)+'/LCE_map_lbnlExample_51x51x30_noReflections.npy')
+DetectorExample_Amherst.set_LCEmap_positions([np.linspace(-radius, radius, 51), np.linspace(-radius, radius, 51), z_slices ])
+DetectorExample_Amherst.load_QPEmap(os.path.dirname(__file__)+'/QP_map_lbnlExample_51x51x30_noReflections.npy')
+DetectorExample_Amherst.set_QPEmap_positions([np.linspace(-radius, radius, 51), np.linspace(-radius, radius, 51), z_slices ])
