@@ -168,7 +168,7 @@ height = 2.75
 nBins = 30
 z_slices = np.linspace(det_Zoffset+Z_correction+bottomPos, det_Zoffset+Z_correction+bottomPos+height, nBins)
 
-DetectorExample_Amherst.load_LCEmap(os.path.dirname(__file__)+'/LCE_map_lbnlExample_51x51x30_noReflections.npy')
-DetectorExample_Amherst.set_LCEmap_positions([np.linspace(-radius, radius, 51), np.linspace(-radius, radius, 51), z_slices ])
-DetectorExample_Amherst.load_QPEmap(os.path.dirname(__file__)+'/QP_map_lbnlExample_51x51x30_noReflections.npy')
-DetectorExample_Amherst.set_QPEmap_positions([np.linspace(-radius, radius, 51), np.linspace(-radius, radius, 51), z_slices ])
+DetectorExample_LBNL.load_LCEmap(os.path.dirname(__file__)+'/LCE_map_lbnlExample_51x51x30_noReflections.npy')
+DetectorExample_LBNL.set_LCEmap_positions([np.linspace(-radius, radius, 51), np.linspace(-radius, radius, 51), z_slices ])
+DetectorExample_LBNL.load_QPEmap(os.path.dirname(__file__)+'/QP_map_lbnlExample_51x51x30_noReflections.npy')
+DetectorExample_LBNL.set_QPEmap_positions([np.linspace(-radius, radius, 51), np.linspace(-radius, radius, 51), z_slices ])
