@@ -538,7 +538,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
         for i in range(nCPDs):
             nHits = np.random.binomial( QPs, hitProbabilities[i] )
             coincidence += min([nHits, 1]) # 0 or 1
-            chAreas[i] = nHits * detector.get_adsorption_gain()
+            chAreas[i] = nHits * detector.get_adsorption_gain() * 1000. # eV
             thisCPD = detector.get_CPD(i)
             noiseBaseline = thisCPD.get_baselineNoise()
             noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
@@ -560,7 +560,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
     coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
-        chAreas[i] = nHitsPerCPD[i]*detector.get_adsorption_gain()
+        chAreas[i] = nHitsPerCPD[i]*detector.get_adsorption_gain() * 1000. # eV
         coincidence += min([nHitsPerCPD[i], 1]) # 0 or 1
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
