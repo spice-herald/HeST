@@ -86,7 +86,7 @@ class VDetector:
         self.liquid_surface     = liquid_surface
         self.liquid_conditions  = liquid_conditions
         self.CPDs               = CPDs
-        self.adsorption_gain    = adsorption_gain #meV
+        self.    =  #meV
         self.evaporation_eff    = evaporation_eff
         self.LCEmap             = LCEmap
         self.LCEmap_positions   = LCEmap_positions
@@ -112,8 +112,8 @@ class VDetector:
         self.liquid_surface = f1
     def set_liquid_conditions(self, f1):
         self.liquid_conditions = f1
-    def set_adsorption_gain( self, p1 ):
-        self.adsorption_gain = p1
+    def set_( self, p1 ):
+        self. = p1
     def set_evaporation_eff( self, p1 ):
         self.evaporation_eff = p1
         
@@ -167,8 +167,8 @@ class VDetector:
     
     def get_liquid_surface( self ):
         return self.liquid_surface
-    def get_adsorption_gain(self):
-        return self.adsorption_gain
+    def get_(self):
+        return self.
     def get_evaporation_eff(self):
         return self.evaporation_eff
     
@@ -538,7 +538,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
         for i in range(nCPDs):
             nHits = np.random.binomial( QPs, hitProbabilities[i] )
             coincidence += min([nHits, 1]) # 0 or 1
-            chAreas[i] = nHits * detector.get_adsorption_gain() * 1000. # eV
+            chAreas[i] = nHits * detector.get_adsorption_gain() / 1000. # eV
             thisCPD = detector.get_CPD(i)
             noiseBaseline = thisCPD.get_baselineNoise()
             noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
@@ -560,7 +560,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
     coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
-        chAreas[i] = nHitsPerCPD[i]*detector.get_adsorption_gain() * 1000. # eV
+        chAreas[i] = nHitsPerCPD[i]*detector.get_adsorption_gain() / 1000. # eV
         coincidence += min([nHitsPerCPD[i], 1]) # 0 or 1
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
