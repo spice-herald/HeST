@@ -14,7 +14,9 @@ class QuantaResult:
         self.Quasiparticles = Quasiparticles
 
 class CPD_Signal:
-    def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[]):
+    def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]]):
+        if arrivalTimes_us == [[]]:
+            arrivalTimes_us = [[]]*len(area_eV)
         self.area_eV = area_eV #total pulse area
         self.chArea_eV = chArea_eV # individual CPD pulse areas
         self.coincidence = coincidence #number of CPDs hit
