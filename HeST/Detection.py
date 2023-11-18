@@ -1,4 +1,5 @@
 from scipy.interpolate import interpn
+import detProcess.Template
 import numpy as np
 from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity 
 from .HeST_Core import Singlet_PhotonEnergy
@@ -86,7 +87,7 @@ class VDetector:
         self.liquid_surface     = liquid_surface
         self.liquid_conditions  = liquid_conditions
         self.CPDs               = CPDs
-        self.    =  #meV
+        self.adsorption_gain   = adsorption_gain #meV
         self.evaporation_eff    = evaporation_eff
         self.LCEmap             = LCEmap
         self.LCEmap_positions   = LCEmap_positions
@@ -112,8 +113,8 @@ class VDetector:
         self.liquid_surface = f1
     def set_liquid_conditions(self, f1):
         self.liquid_conditions = f1
-    def set_( self, p1 ):
-        self. = p1
+    def set_adsoption_gain( self, p1 ):
+        self.adsorption_gain = p1
     def set_evaporation_eff( self, p1 ):
         self.evaporation_eff = p1
         
@@ -167,8 +168,8 @@ class VDetector:
     
     def get_liquid_surface( self ):
         return self.liquid_surface
-    def get_(self):
-        return self.
+    def get_adsorption_gain(self):
+        return self.adsorption_gain
     def get_evaporation_eff(self):
         return self.evaporation_eff
     
@@ -471,7 +472,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
         
     nCPDs = detector.get_nCPDs()
     nHitsPerCPD = [0]*nCPDs
-    arrivalTimes = []
+    arrivalTimes = [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
     #check to see if a map is loaded
     if useMap:
@@ -496,7 +497,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
         hit, arrival_time, n, xs, ys, zs, cpd_id = photon_propagation([X, Y, Z], conditions, detector.get_photon_reflection_prob())
         if hit > 0.5:
             nHitsPerCPD[cpd_id] += hit
-            arrivalTimes.append( arrival_time )
+            arrivalTimes[cpd_id].append( arrival_time )
     coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
@@ -505,7 +506,8 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
         noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHitsPerCPD[i])
-        chAreas[i] += np.sum(noise)     
+        chAreas[i] += np.sum(noise)
+
         
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)  
 
@@ -528,7 +530,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
         
     nCPDs = detector.get_nCPDs()
     nHitsPerCPD = [0]*nCPDs
-    arrivalTimes = []
+    arrivalTimes = [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
     #check to see if a map is loaded
     if useMap:
@@ -555,7 +557,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
         hit, arrival_time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff())
         if hit > 0.5:
             nHitsPerCPD[cpd_id] += hit
-            arrivalTimes.append( arrival_time )
+            arrivalTimes[cpd_id].append( arrival_time )
     
     coincidence = 0
     #add in baseline noise for each detected photon
@@ -569,3 +571,55 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
         
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes) 
 
+
+''' #########################################################################
+    Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
+    ######################################################################### '''
+    
+def GetLEEPulse(detector, cpdID, area):
+    template_gen = Template(verbose=True)
+    template_gen.create_template('CPD_1',A=1,B=1,
+                                 trace_length_msec=5, #msec
+                                 pretrigger_length_msec=2, #msec
+                                 sample_rate=1.25e6, #Hz
+                                 tau_r=65.00e-6, #sec
+                                 tau_f1=190.0e-6, #sec
+                                 tau_f2=596.0e-6) #sec
+    template_array1, time_array1 = template_gen.get_template('CPD_1')
+    normalization = np.sum(template_array1)*(time_array1[1] - time_array1[0])
+    
+    return template_array1*area/normalization, time_array1
+
+def GetDetResponse(arrivalTimes_us):
+    '''
+    First draft of a function that takes in arrival times in us and spits out a TES waveform in us
+    '''
+    minTime = min(arrivalTimes_us)
+    maxTime = max(arrivalTimes_us)
+    print(minTime)
+    print(maxTime)
+    
+    PulseTime_us = 5*(maxTime) #take to be ~5x range of arrival times; this will be tuned later
+    print("pulseTime_us: "+str(PulseTime_us))
+    sample_count = 10000
+    data_freq = sample_count/PulseTime_us*1000000 #Hz
+    print("Frequency: "+str(data_freq))
+    # sample_count = int(PulseTime_us*1e-6*data_freq)  #Get the number of time samples in the array
+    print("Sample Count: "+str(sample_count))
+    template_array_total = np.zeros(sample_count)
+    time_array = np.linspace(0, PulseTime_us, sample_count)
+
+    template_gen = Template()
+    for time in arrivalTimes_us:
+            template_gen.create_template('CPDx',A=1,B=1, #All of these parameters will need to be tuned; currently copied from the LEE template
+                                 trace_length_msec=.001*PulseTime_us, #msec;
+                                 pretrigger_length_msec=time*.001, #msec
+                                 sample_rate= data_freq, #Hz
+                                 tau_r=65.00e-6, #sec
+                                 tau_f1=190.0e-6, #sec
+                                 tau_f2=596.0e-6) #sec
+            template_array1, time_array1 = template_gen.get_template('CPDx')
+            normalization = 1 #Needs tuning
+            template_array_total += template_array1/normalization
+    # print(template_array_total)
+    return time_array, template_array_total
