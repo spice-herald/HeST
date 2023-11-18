@@ -1,5 +1,5 @@
 from scipy.interpolate import interpn
-import detProcess.Template
+from detprocess import Template
 import numpy as np
 from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity 
 from .HeST_Core import Singlet_PhotonEnergy
@@ -576,7 +576,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
     ######################################################################### '''
     
-def GetLEEPulse(detector, cpdID, area):
+def GetLEEPulse(area):
     template_gen = Template(verbose=True)
     template_gen.create_template('CPD_1',A=1,B=1,
                                  trace_length_msec=5, #msec
