@@ -230,7 +230,7 @@ class VDetector:
         z = positions[2]
         return interpn((x, y, z), self.LCEmap, [X, Y, Z])[0]
     
-    def create_QPEmap(self, x_array, y_array, z_array, nQPs=10000, filestring="detector_QPEmap"):
+    def create_QPEmap(self, x_array, y_array, z_array, nQPs=10000, filestring="detector_QPEmap", T=2.):
         print("Creating QPE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_QPEmap_positions( [x, y, z] )
@@ -253,7 +253,7 @@ class VDetector:
                     hitProbs = [0.]*nCPDs
                     for n in range(nQPs):
 
-                        hit, time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation(pos, conditions, refl_prob, evap_eff=self.evaporation_eff)
+                        hit, time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation(pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T)
                         if hit > 0:
                             hitProbs[cpd_id] += 1.
                         
@@ -347,7 +347,7 @@ def evaporation(momentum, energy, velocity, direction):
     return 1., Velocity_He_atom, new_Vx/magnitude, new_Vy/magnitude, new_Vz/magnitude
 
 
-def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60):
+def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60, T=2.):
     phi, arctheta = np.random.uniform(0., 2.*np.pi), np.random.uniform(-1., 1)
     theta = np.arccos(arctheta)
     dx = np.cos( phi ) * np.sin( theta )
@@ -358,7 +358,7 @@ def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60):
     total_time = 0.
     n=0
     xs, ys, zs = [start[0]], [start[1]], [start[2]]
-    momentum = Random_QPmomentum() #keV/c
+    momentum = Random_QPmomentum(T=T) #keV/c
     if momentum < 1.1:
         return 0, total_time, n, xs, ys, zs, momentum, None, -999
     velocity = QP_velocity(momentum) #m/s
@@ -513,7 +513,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
 
 
 
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
     '''
     Attempt to simulate the CPD response for quasiparticles.
     
@@ -554,7 +554,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True):
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
     for n in range(QPs):
-        hit, arrival_time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff())
+        hit, arrival_time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T)
         if hit > 0.5:
             nHitsPerCPD[cpd_id] += hit
             arrivalTimes[cpd_id].append( arrival_time )
