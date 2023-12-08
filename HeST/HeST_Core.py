@@ -121,20 +121,26 @@ def GetSingletYields(energy, interaction):
         else:
             print("Please specify ER or NR for interaction type!")
 
-def Get_Quasiparticles(qp_energy): 
+def Get_Quasiparticles(qp_energy, T=2.): 
     #returns the mean number of quasiparticles given 
     # the energy in eV in the QP channel
     
-    #based on a linear fit after calculating the nQPs
+    #based on a power law fit after calculating the nQPs
     # using random sampling of the dispersion relation
     # given a Bose-Einstein distribution for nD/dp
-    
-    slope_t2, b_t2 = 1244.04521473, 29.10987933 #linear fit params
-    return slope_t2*qp_energy + b_t2
+    Coeff =  1156.25/pow(T, 3.58) + 1137.3
+    Pow   = 1.0 - 8.74e-4*np.exp(-T/0.264) 
+ 
+    #slope_t2, b_t2 = 1244.04521473, 29.10987933 #linear fit params
+    #return slope_t2*qp_energy + b_t2
 
-def GetQuanta(energy, interaction):
+    return  Coeff*pow(x,Pow) 
+
+
+def GetQuanta(energy, interaction, T=2.):
     # energy -- recoil energy in eV
     # interaction -- "ER" or "NR"
+    # T -- ambient QP temperature in Kelvin for QP generation
  
     singlet_fraction, triplet_fraction, QP_fraction, IR_fraction = GetEnergyChannelFractions(energy, interaction)
     nSingletPhotons = GetSingletYields(energy, interaction)
@@ -157,12 +163,12 @@ def GetQuanta(energy, interaction):
     
         #assume the fano fluctuations are anti-correlated with the QP energy
         QP_energy += scint_energy - scint_energy_actual 
-        nQP_actual = max([0, int(Get_Quasiparticles(QP_energy))])
+        nQP_actual = max([0, int(Get_Quasiparticles(QP_energy, T=T))])
     else:
         nSing_actual = 0
         nTrip_actual = 0
         QP_energy = energy
-        nQP = int(Get_Quasiparticles(QP_energy))
+        nQP = int(Get_Quasiparticles(QP_energy, T=T))
         nQP_actual = max([0, int( np.random.normal(nQP, np.sqrt(Fano*nQP)) )])
     
     return QuantaResult( nSing_actual, nTrip_actual, nQP_actual )
@@ -196,7 +202,8 @@ def getMaxY_Temp(T):
     return  max(f)*1.05
 
 
-def Random_QPmomentum(T=2., maxY=0.2):
+def Random_QPmomentum(T=2.):
+    maxY = getMaxY_Temp(T)
     while True:
         pTry = np.random.uniform(0., 4.7)
         yTry = np.random.uniform(0., maxY)
