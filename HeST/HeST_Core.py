@@ -134,7 +134,7 @@ def Get_Quasiparticles(qp_energy, T=2.):
     #slope_t2, b_t2 = 1244.04521473, 29.10987933 #linear fit params
     #return slope_t2*qp_energy + b_t2
 
-    return  Coeff*pow(x,Pow) 
+    return  Coeff*pow(T,Pow) 
 
 
 def GetQuanta(energy, interaction, T=2.):
