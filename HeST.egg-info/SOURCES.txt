@@ -1,6 +1,8 @@
+ExampleUsage.ipynb
 LICENSE
 README.md
 setup.py
+.ipynb_checkpoints/ExampleUsage-checkpoint.ipynb
 HeST/Amherst_Example_Detector.py
 HeST/Detection.py
 HeST/HeST_Core.py
@@ -16,3 +18,16 @@ HeST.egg-info/SOURCES.txt
 HeST.egg-info/dependency_links.txt
 HeST.egg-info/requires.txt
 HeST.egg-info/top_level.txt
+HeST/__pycache__/Amherst_Example_Detector.cpython-38.pyc
+HeST/__pycache__/Detection.cpython-38.pyc
+HeST/__pycache__/HeST_Core.cpython-38.pyc
+HeST/__pycache__/LBNL_Example_Detector.cpython-38.pyc
+HeST/__pycache__/WIMP_Generation.cpython-38.pyc
+HeST/__pycache__/__init__.cpython-38.pyc
+dist/HeST-0.1.3-py3-none-any.whl
+dist/HeST-0.1.3.tar.gz
+map_generation/LCEmap_2DmapFromZ.py
+map_generation/Merge2DMaps.py
+map_generation/QPEmap_2DmapFromZ.py
+map_generation/processMapsInParallel.py
+map_generation/submit_parallelJob.sh
