@@ -7,7 +7,7 @@ This is an early developmental version of a yields simulation package. Further d
 
 In the terminal, simply use: 
 
-`pip install HeST==0.1.3`
+`pip install HeST==0.2.0`
 
 Then in your python scripts you can use: 
 

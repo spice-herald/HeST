@@ -1,6 +1,7 @@
 from scipy.interpolate import interpn
 from detprocess import Template
 import numpy as np
+import re
 from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity 
 from .HeST_Core import Singlet_PhotonEnergy
 
@@ -289,166 +290,277 @@ class VDetector:
     ############################################################################# '''
 
 def find_surface_intersection(start, direction, conditions):
-    t = np.linspace(0, 8, 500)  # Parameter range for the line
+    if np.isscalar( start[0] ):
+        start = np.array([np.array([p]) for p in start])
+    if np.isscalar( direction[0] ):
+        direction = np.array([np.array([p]) for p in direction])
+    t = np.array([np.linspace(0, 8, 250) for i in range(len(start[0]))])  # Parameter range for the line
     # Calculate the line coordinates
-    x_line = start[0] + t * direction[0]
-    y_line = start[1] + t * direction[1]
-    z_line = start[2] + t * direction[2]
-    intersection_points = []
-    dist = 999.
-    coords = [None, None, None]
-    surface_type = None
+    x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
+    y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
+    z_line = start[2][:, np.newaxis] + t * direction[2][:, np.newaxis]
+
+    dist = np.ones(len(start[0]))*9999.
+    coords = [np.full(len(start[0]), None), np.full(len(start[0]), None), np.full(len(start[0]), None)]
+    surface_type = np.full(len(start[0]), None)
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
-        first_int = np.argmax(~cut)
-        if first_int == 0:
-            continue
-        d = t[first_int]
-        if d < dist:
-            dist = d
-            #get the coords of the first point *before* the interaction
-            coords = [x_line[first_int-1], y_line[first_int-1], z_line[first_int-1]]
-            surface_type = surface
+        first_ints = np.array([np.argmax(~cut[i]) for i in range(len(cut))])
+        #if first_int == 0:
+        #    continue
+        d = t[np.arange(t.shape[0]), first_ints]
+        cond = ( d < dist ) & (first_ints > 0)
+        dist = np.where(cond, d, dist)        
+       
+        #get the coords of the first point *before* the interaction
+        coords[0] = np.where(cond, x_line[np.arange(x_line.shape[0]), first_ints-1], coords[0])
+        coords[1] = np.where(cond, y_line[np.arange(y_line.shape[0]), first_ints-1], coords[1])
+        coords[2] = np.where(cond, z_line[np.arange(z_line.shape[0]), first_ints-1], coords[2])
+        surface_type = np.where( cond, surface, surface_type )
+        
     return coords[0], coords[1], coords[2], surface_type
 
 def evaporation(momentum, energy, velocity, direction):
+    if np.isscalar(momentum):
+        momentum = np.array([momentum])
+    if np.isscalar(energy):
+        energy = np.array([energy])
+    if np.isscalar(velocity):
+        velocity = np.array([velocity])
+    
     #adapted from Pratyush's code
     mass = 3.725472e9 #He mass in eV/c^2
     c = 2.998e8 #m/s
     Eb = 0.00062
+
     
-    if velocity <= 0.:
-        return 0., 0., 0., 0., 0.
     theta = np.arccos(direction[2]) #radians
     #sin_critical_angle = np.sqrt( 2*(energy-0.00062)/(4.002603254e9) )/(np.abs(velocity)/3e8)
     sin_critical_angle = np.sqrt(2.*mass*(energy - Eb))/momentum/1000. #Eq 2.19 from J. Adams thesis
-    if sin_critical_angle > 1.:
-        return 0., 0., 0., 0., 0.
-    crit_angle = np.arcsin( sin_critical_angle ) #radians
-    if theta > crit_angle:
-        return 0., 0., 0., 0., 0.
-    Velocity_He_atom=np.sqrt( 2.*(energy-Eb)/(mass) )*c
     
+    crit_angle = np.arcsin( sin_critical_angle ) #radians
+    
+    Velocity_He_atom=np.sqrt( 2.*(energy-Eb)/(mass) )*c
+
     sin_theta_R = (velocity/c)*np.sin((theta))/np.sqrt( 2*(energy-Eb)/(mass) ) #Eq 2.18 from Adams thesis (q = mv/hbar*c)
     theta_R = np.arcsin(sin_theta_R)
     new_Vz=Velocity_He_atom*np.cos(theta_R)
-    if direction[1] == 0.:
-        tan = np.pi/2.
-        new_Vy = 0.        
-    else:
-        tan = np.arctan(np.abs(direction[0]/direction[1]) )
-        new_Vy= direction[1]/np.abs(direction[1])*Velocity_He_atom*np.sin(theta_R)*np.sin((tan))
-    if direction[0] == 0.:
-        new_Vx = 0.
-    else:
-        new_Vx= direction[0]/np.abs(direction[0])*Velocity_He_atom*np.sin(theta_R)*np.cos((tan))
-        
-    magnitude=np.sqrt(new_Vx*new_Vx+new_Vy*new_Vy+new_Vz*new_Vz)
-    return 1., Velocity_He_atom, new_Vx/magnitude, new_Vy/magnitude, new_Vz/magnitude
-
-
-def QP_propagation(start, conditions, reflection_prob, evap_eff=0.60, T=2.):
-    phi, arctheta = np.random.uniform(0., 2.*np.pi), np.random.uniform(-1., 1)
-    theta = np.arccos(arctheta)
-    dx = np.cos( phi ) * np.sin( theta )
-    dy = np.sin( phi ) * np.sin( theta )
-    dz = np.cos(theta)
+    cond = (direction[1] == 0.)
+    tan = np.where( cond, np.pi/2., np.arctan(np.abs(direction[0]/direction[1]) ))
+    new_Vy = np.where( cond, 0., direction[1]/np.abs(direction[1])*Velocity_He_atom*np.sin(theta_R)*np.sin((tan)) )
     
-    #dx, dy, dz = 0., 0., 1
-    total_time = 0.
-    n=0
-    xs, ys, zs = [start[0]], [start[1]], [start[2]]
-    momentum = Random_QPmomentum(T=T) #keV/c
-    if momentum < 1.1:
-        return 0, total_time, n, xs, ys, zs, momentum, None, -999
-    velocity = QP_velocity(momentum) #m/s
-    #print(velocity)
-    energy = QP_dispersion(momentum) #eV
-    evaporated = False
-    while True:
-        n+=1
-        X1, Y1, Z1, surface_type = find_surface_intersection(start, [dx, dy, dz], conditions)
-        if surface_type == None:
-            return 0, total_time, n, xs, ys, zs, momentum, None, -999
-        xs.append(X1)
-        ys.append(Y1)
-        zs.append(Z1)
-        total_time += (np.sqrt(pow(X1-start[0],2.)+pow(Y1-start[1], 2.)+pow(Z1-start[2],2.)))/(velocity*1.0e-4) #us
-        if surface_type == "Liquid":
-            evap, velocity, dx, dy, dz = evaporation(momentum, energy, velocity, [dx, dy, dz])
-            #evap = 1.
-            #print("Liquid", velocity)
-            #if evap < 0.5:
-            if  (evap < 0.5) or (np.random.random() > evap_eff ):
-                return 0, total_time, n, xs, ys, zs, momentum, surface_type, -999
-            else:
-                Z1 += 0.1 #increment just above the liquid surface
-                start = [X1, Y1, Z1]
-                evaporated = True
-                continue
-            
-        if "CPD" in surface_type:
-            cpd_id = int(surface_type.split("CPD")[-1])
-            if evaporated == True:
-                return 1, total_time, n, xs, ys, zs, momentum, surface_type, cpd_id
-            return 0, total_time, n, xs, ys, zs, momentum, surface_type, cpd_id
-        r = np.random.random()
-        if r > reflection_prob:
-            return 0, total_time, n, xs, ys, zs, momentum, surface_type, -999
-        if surface_type == "X":
-            dx *= -1.
-        if surface_type == "Y":
-            dy *= -1.
-        if surface_type == "Z":
-            dz *= -1.
-        if surface_type == "XY":
-            normal_vector = np.array([X1, Y1, 0.])
-            normal_vector = normal_vector / np.linalg.norm(normal_vector)
-            incident_vector = np.array([dx, dy, dz])
-            reflected_vector = incident_vector - 2. * np.dot(incident_vector, normal_vector) * normal_vector
-            dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
-        start = [X1, Y1, Z1]
-        
-        
-def photon_propagation(start, conditions, reflection_prob):
-    phi, arctheta = np.random.uniform(0., 2.*np.pi), np.random.uniform(-1., 1)
+    cond = (direction[0] == 0.)
+    new_Vx = np.where( cond, 0., direction[0]/np.abs(direction[0])*Velocity_He_atom*np.sin(theta_R)*np.cos((tan)))
+
+    magnitude=np.sqrt(new_Vx*new_Vx+new_Vy*new_Vy+new_Vz*new_Vz)
+    
+    cond = (velocity <= 0) | (sin_critical_angle > 1.) | (theta > crit_angle) | ( energy < Eb )
+    energy = np.where( cond, 0., energy - Eb)
+  
+    Velocity_He_atom = np.where( cond, 0., Velocity_He_atom )
+    new_Vx = np.where( cond, 0., new_Vx/magnitude )
+    new_Vy = np.where( cond, 0., new_Vy/magnitude )
+    new_Vz = np.where( cond, 0., new_Vz/magnitude )
+    
+    return np.where(cond, 0, 1), Velocity_He_atom, new_Vx, new_Vy, new_Vz
+
+# Define a function to extract the CPD number using regex
+def extract_number(s):
+    match = re.search(r'\d+', s)  # Find the first occurrence of one or more digits
+    if match:
+        return int(match.group())  # Convert the matched digits to an integer
+    return None  # Return None if no digits are found
+
+# Define a function to handle reflections off of walls
+def wall_reflect(X, Y, dx, dy, dz):
+    normal_vector = np.array([X, Y, 0.])
+    normal_vector = normal_vector / np.linalg.norm(normal_vector)
+    incident_vector = np.array([dx, dy, dz])
+    reflected_vector = incident_vector - 2. * np.dot(incident_vector, normal_vector) * normal_vector
+    dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
+    return dx, dy, dz
+
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.):
+    
+    #make sure the we have an array of starting positions for each QP
+    if np.isscalar(nQPs):
+        X = np.full(nQPs, start[0])
+        Y = np.full(nQPs, start[1])
+        Z = np.full(nQPs, start[2])
+        start = np.array([X, Y, Z])
+    
+    X, Y, Z = start[0], start[1], start[2]
+    phi, arctheta = np.random.uniform(0., 2.*np.pi, size=nQPs), np.random.uniform(-1., 1, size=nQPs)
     theta = np.arccos(arctheta)
     dx = np.cos( phi ) * np.sin( theta )
     dy = np.sin( phi ) * np.sin( theta )
     dz = np.cos(theta)
-    #dx, dy, dz = 0., 0., 1.
-    total_time = np.random.exponential(0.004)
+
+    #dx, dy, dz = 0., 0., 1
+    total_time = np.zeros(nQPs, dtype=float)
     n=0
-    xs, ys, zs = [start[0]], [start[1]], [start[2]]
-    velocity = 29979.2/1.03 #speed of light in He4 cm/us
-    while True:
+    #xs, ys, zs = [start[0]], [start[1]], [start[2]]
+    momentum = Random_QPmomentum(T=T, size=nQPs) #keV/c
+    Eb = 0.00062
+    alive = np.ones(nQPs, dtype=int)
+    cond = momentum < 1.1
+    alive = np.where( cond, 0, alive)
+
+    velocity = QP_velocity(momentum) #m/s
+    energy = QP_dispersion(momentum) #eV
+    cond = (velocity > 0.)
+    alive = np.where( cond, alive, 0.)
+    evaporated = np.zeros( nQPs, dtype=bool)
+    
+    deposits = np.zeros(nQPs, dtype=float)
+    ids = np.full(nQPs, None)
+    while sum(alive) > 0:
         n+=1
-        X1, Y1, Z1, surface_type = find_surface_intersection(start, [dx, dy, dz], conditions)
-        if surface_type == None:
-            return 0,total_time, n, xs, ys, zs, -999
-        xs.append(X1)
-        ys.append(Y1)
-        zs.append(Z1)
-        total_time += np.sqrt(pow(X1-start[0],2.)+pow(Y1-start[1], 2.)+pow(Z1-start[2],2.))/velocity
-        if "CPD" in surface_type:
-            cpd_id = int(surface_type.split("CPD")[-1])
-            return 1, total_time, n, xs, ys, zs, cpd_id
-        r = np.random.random()
-        if r > reflection_prob:
-            return 0, total_time, n, xs, ys, zs, -999
-        if surface_type == "X":
-            dx *= -1.
-        if surface_type == "Y":
-            dy *= -1.
-        if surface_type == "Z":
-            dz *= -1.
-        if surface_type == "XY":
-            normal_vector = np.array([X1, Y1, 0.])
-            normal_vector = normal_vector / np.linalg.norm(normal_vector)
-            incident_vector = np.array([dx, dy, dz])
-            reflected_vector = incident_vector - 2. * np.dot(incident_vector, normal_vector) * normal_vector
-            dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
-        start = [X1, Y1, Z1]
+        living = ( alive > 0.5 )
+        
+        #print(Z[living])
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X[living], Y[living], Z[living]]), np.array([dx[living], dy[living], dz[living]]), conditions)
+        cond = (surface_type != None)
+        alive[living] = np.where( cond, alive[living], 0)
+        living = ( alive > 0.5 )
+        living_indices = np.where(living)[0]
+
+        X1, Y1, Z1 = X1[cond], Y1[cond], Z1[cond]
+        surface_type = surface_type[cond]
+        
+        dist_sq = (pow(X1-X[living],2.)+pow(Y1-Y[living], 2.)+pow(Z1-Z[living],2.)).astype(float)      
+        total_time[living] = total_time[living] + np.sqrt(dist_sq)/(velocity[living]*1.0e-4)  #us
+        
+        check1 = ( surface_type == "Liquid")
+        #print(surface_type)
+        if len(surface_type[check1]) > 0:
+            
+            evap, velocity[living_indices[check1]], dx[living_indices[check1]], dy[living_indices[check1]], dz[living_indices[check1]] = evaporation(momentum[living][check1], energy[living][check1], velocity[living][check1], [dx[living][check1], dy[living][check1], dz[living][check1]])
+            #print("Evap", sum(evap))
+            cond = (evap < 0.5) | (np.random.random(len(evap)) > evap_eff ) #check if evaporation was successful
+            alive[living_indices[check1]] = np.where(cond, 0, alive[living_indices[check1]]) #kill off QPs that didn't evaporate
+            evaporated[living_indices[check1]] = np.where( cond, evaporated[living_indices[check1]], True )
+            X[living_indices[check1]] = X1[check1]
+            Y[living_indices[check1]] = Y1[check1]
+            Z[living_indices[check1]] = Z1[check1]+0.1
+                                            
+        #print(surface_type)
+        check2 = np.array(["CPD" in str(s) for s in surface_type])
+        #print("Hit %i CPDs" % len(surface_type[check2]))
+        if len(surface_type[check2]) > 0:
+            cpd_id = np.vectorize(extract_number)(surface_type[check2])
+            cond = (evaporated[living][check2])
+            #print("nDeps", len(deposits[living_indices[check2]][cond]))
+            deposits[living_indices[check2]] = np.where( cond, energy[living_indices[check2]], deposits[living_indices[check2]])
+            alive[living_indices[check2]] = np.zeros(len(alive[living_indices[check2]]), dtype=int) #kill off QPs, they've hit a CPD
+            ids[living_indices[check2]] = np.where( cond, cpd_id, None ) #store the CPD IDs for evaporated QPs that hit a CPD
+            
+        check3 = (check1 == False) & (check2 == False) #doesn't reach liquid or CPD
+        if len(surface_type[check3]) > 0:
+            r = np.random.random(len(surface_type[check3]))
+            cond = (r > reflection_prob)
+            alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
+            
+            #handle reflections
+            checkX = (surface_type == "X")
+            checkY = (surface_type == "Y")
+            checkZ = (surface_type == "Z")
+            checkXY = (surface_type == "XY")
+            
+            dx[living_indices[checkX]] = -1.*dx[living][checkX] 
+            dy[living_indices[checkY]] = -1.*dx[living][checkY] 
+            dz[living_indices[checkZ]] = -1.*dx[living][checkZ] 
+            
+            if len(dz[living][checkXY]) > 0:
+                dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
+
+        
+            X[living_indices[check3]] = X1[check3]
+            Y[living_indices[check3]] = Y1[check3]
+            Z[living_indices[check3]] = Z1[check3]
+        #print(alive)
+    hit = (deposits > 0.)
+    return deposits[hit], total_time[hit], ids[hit] 
+        
+def photon_propagation(nPhotons, start, conditions, reflection_prob):
+        
+    #make sure the we have an array of starting positions for each photon
+    if np.isscalar(nPhotons):
+        X = np.full(nPhotons, start[0])
+        Y = np.full(nPhotons, start[1])
+        Z = np.full(nPhotons, start[2])
+        start = np.array([X, Y, Z])
+    
+    X, Y, Z = start[0], start[1], start[2]
+    phi, arctheta = np.random.uniform(0., 2.*np.pi, size=nPhotons), np.random.uniform(-1., 1, size=nPhotons)
+    theta = np.arccos(arctheta)
+    dx = np.cos( phi ) * np.sin( theta )
+    dy = np.sin( phi ) * np.sin( theta )
+    dz = np.cos(theta)
+
+    #dx, dy, dz = 0., 0., 1
+    total_time = np.zeros(nPhotons, dtype=float)
+    n=0
+    alive = np.ones(nPhotons, dtype=int)
+
+    velocity = 29979.2/1.03 #speed of light in He4 cm/us    
+    cond = (velocity > 0.)
+    alive = np.where( cond, alive, 0.)
+    
+    deposits = np.zeros(nPhotons, dtype=float)
+    ids = np.full(nPhotons, None)
+    while sum(alive) > 0:
+        n+=1
+        living = ( alive > 0.5 )
+        
+        #print(Z[living])
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X[living], Y[living], Z[living]]), np.array([dx[living], dy[living], dz[living]]), conditions)
+        cond = (surface_type != None)
+        alive[living] = np.where( cond, alive[living], 0)
+        living = ( alive > 0.5 )
+        living_indices = np.where(living)[0]
+
+        X1, Y1, Z1 = X1[cond], Y1[cond], Z1[cond]
+        surface_type = surface_type[cond]
+        
+        dist_sq = (pow(X1-X[living],2.)+pow(Y1-Y[living], 2.)+pow(Z1-Z[living],2.)).astype(float)      
+        total_time[living] = total_time[living] + np.sqrt(dist_sq)/velocity  #us
+        
+        check1 = np.array(["CPD" in str(s) for s in surface_type])
+        #print("Hit %i CPDs" % len(surface_type[check2]))
+        if len(surface_type[check1]) > 0:
+            cpd_id = np.vectorize(extract_number)(surface_type[check1])
+            deposits[living_indices[check1]] = 1.
+            alive[living_indices[check1]] = 0 #kill off photons, they've hit a CPD
+            ids[living_indices[check1]] = cpd_id #store the CPD IDs for photons that hit a CPD
+            
+        check3 = (check1 == False) #doesn't reach CPD
+        if len(surface_type[check3]) > 0:
+            r = np.random.random(len(surface_type[check3]))
+            cond = (r > reflection_prob)
+            alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
+            
+            #handle reflections
+            checkX = (surface_type == "X")
+            checkY = (surface_type == "Y")
+            checkZ = (surface_type == "Z")
+            checkXY = (surface_type == "XY")
+            
+            dx[living_indices[checkX]] = -1.*dx[living][checkX] 
+            dy[living_indices[checkY]] = -1.*dx[living][checkY] 
+            dz[living_indices[checkZ]] = -1.*dx[living][checkZ] 
+            
+            if len(dz[living][checkXY]) > 0:
+                dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
+
+        
+            X[living_indices[check3]] = X1[check3]
+            Y[living_indices[check3]] = Y1[check3]
+            Z[living_indices[check3]] = Z1[check3]
+        #print(alive)
+    hit = (deposits > 0.)
+    return deposits[hit], total_time[hit], ids[hit]
+
 
 ''' #########################################################################
 
@@ -459,24 +571,24 @@ def photon_propagation(start, conditions, reflection_prob):
 def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     '''
     Attempt to simulate the CPD response for singlet photons.
-    
-    If useMap == True, the detector's LCEmap is loaded and the number of photon hits are 
+
+    If useMap == True, the detector's LCEmap is loaded and the number of photon hits are
     calculated using that light collection efficiency given the interaction location.
-    If False, loop through individual photons, calculating the number of hits 
-    and the arrival times. This takes substantially more time: ~1.3s for 10k photons.
+    If False, loop through individual photons, calculating the number of hits
+    and the arrival times.
     Number of hits are converted to pulse areas using the Singlet Photon Energy
     '''
     #check to see if there's an LCEmap loaded/generated
     if type(detector.get_LCEmap()) == int:
         useMap = False
-        
+
     nCPDs = detector.get_nCPDs()
     nHitsPerCPD = [0]*nCPDs
     arrivalTimes = [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
     #check to see if a map is loaded
     if useMap:
-        hitProbabilities = detector.get_photon_hits( X, Y, Z)
+        hitProbabilities = detector.get_photon_hits( X, Y, Z )
         coincidence = 0
         for i in range(nCPDs):
             nHits = np.random.binomial(photons, hitProbabilities[i])
@@ -486,48 +598,47 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
             noiseBaseline = thisCPD.get_baselineNoise()
             noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
             chAreas[i] += np.sum(noise)
-            
+
         return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
-    
+
     #if the map hasn't been loaded or we want arrival times...
     conditions = detector.get_surface_conditions()
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
-    for n in range(photons):
-        hit, arrival_time, n, xs, ys, zs, cpd_id = photon_propagation([X, Y, Z], conditions, detector.get_photon_reflection_prob())
-        if hit > 0.5:
-            nHitsPerCPD[cpd_id] += hit
-            arrivalTimes[cpd_id].append( arrival_time )
+    hits, arrival_times, cpd_ids = photon_propagation(photons, [X, Y, Z], conditions, detector.get_photon_reflection_prob())
+    
     coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
-        chAreas[i] = nHitsPerCPD[i]*Singlet_PhotonEnergy
-        coincidence += min([nHitsPerCPD[i], 1]) # 0 or 1
+        cond = (cpd_ids == i)
+        chAreas[i] = sum(hits[cond])*Singlet_PhotonEnergy
+        coincidence += min([len(hits[cond]), 1]) # 0 or 1
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
-        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHitsPerCPD[i])
+        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=len(hits[cond]))
         chAreas[i] += np.sum(noise)
+        arrivalTimes[i] = arrival_times[cond]
 
-        
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)  
 
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 
 def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
     '''
     Attempt to simulate the CPD response for quasiparticles.
-    
-    If useMap == True, the detector's QPEmap is loaded and the number of QP hits are 
+
+    If useMap == True, the detector's QPEmap is loaded and the number of QP hits are
     calculated using that evaporation efficiency given the interaction location.
-    If False, loop through individual QPs, calculating the number of hits 
-    and the arrival times. This takes substantially more time: ~1.5s for 10k particles.
-    Number of hits are converted to pulse areas using the detector's adsorption gain. 
-    
+    If False, loop through individual QPs, calculating the number of hits
+    and the arrival times.
+    Hits are floating point numbers containing the amount of energy deposited on the CPD
+    and then increased using the detector's adsorption gain.
+
     '''
     #check to see if there's an LCEmap loaded/generated
     if type(detector.get_QPEmap()) == int:
         useMap = False
-        
+
     nCPDs = detector.get_nCPDs()
     nHitsPerCPD = [0]*nCPDs
     arrivalTimes = [[] for x in range(nCPDs)]
@@ -535,8 +646,8 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
     #check to see if a map is loaded
     if useMap:
         hitProbabilities = detector.get_QP_hits( X, Y, Z)
-        coincidence = 0    
-        
+        coincidence = 0
+
         for i in range(nCPDs):
             nHits = np.random.binomial( QPs, hitProbabilities[i] )
             coincidence += min([nHits, 1]) # 0 or 1
@@ -545,32 +656,30 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
             noiseBaseline = thisCPD.get_baselineNoise()
             noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
             chAreas[i] += np.sum(noise)
-            
+
         return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
-    
+
     #if the map hasn't been loaded or we want arrival times...
     conditions = detector.get_surface_conditions()
     conditions.append( detector.liquid_surface )
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
-    for n in range(QPs):
-        hit, arrival_time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation([X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T)
-        if hit > 0.5:
-            nHitsPerCPD[cpd_id] += hit
-            arrivalTimes[cpd_id].append( arrival_time )
+        
+    hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T)
     
     coincidence = 0
     #add in baseline noise for each detected photon
     for i in range(nCPDs):
-        chAreas[i] = nHitsPerCPD[i]*detector.get_adsorption_gain() # eV
-        coincidence += min([nHitsPerCPD[i], 1]) # 0 or 1
+        cond = (cpd_ids == i)
+        chAreas[i] = sum(hits[cond] + detector.get_adsorption_gain()) # eV
+        coincidence += min([len(hits[cond]), 1]) # 0 or 1
         thisCPD = detector.get_CPD(i)
         noiseBaseline = thisCPD.get_baselineNoise()
-        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHitsPerCPD[i])
-        chAreas[i] += np.sum(noise)     
-        
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes) 
+        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=len(hits[cond]))
+        chAreas[i] += np.sum(noise)
+        arrivalTimes[i] = arrival_times[cond]
 
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)

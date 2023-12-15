@@ -16,7 +16,7 @@ class QuantaResult:
 class CPD_Signal:
     def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]]):
         if arrivalTimes_us == [[]]:
-            arrivalTimes_us = [[]]*len(area_eV)
+            arrivalTimes_us = [[]]*len(chArea_eV)
         self.area_eV = area_eV #total pulse area
         self.chArea_eV = chArea_eV # individual CPD pulse areas
         self.coincidence = coincidence #number of CPDs hit
@@ -27,40 +27,35 @@ class CPD_Signal:
 def ER_QP_eFraction(energy):
     a, b, c, d = 100., 2.98839372, 13.89437102, 0.33504361
     frac =  a/((energy-c)**b) + d
-    if frac > 1.0 or energy < 19.77:
-        return 1.0
-    return frac
+    condition = (frac > 1.0) | (energy < 19.77)
+    return np.where( condition, 1.0, frac )
 
 def ER_triplet_eFraction(energy):
     a, b, c, d, e, f, g = 14.69346932, 1.17858385, 17.60481951, 0.95286617, 0.23929604, 13.81618099, 4.92551215
     frac = f/(energy-a)**b - g/(energy-c)**d + e
-    if frac < 0. or energy < 19.77:
-        return 0.
-    return frac
+    condition = ( frac < 0. ) | (energy < 19.77 )
+    return np.where( condition, 0., frac )
 
 def ER_singlet_eFraction(energy):
     a, b, c, d = 2.05492076e+03, 5.93097885, 3.3091563, 0.31773768
     frac = -a/(energy-b)**c + d
-    if frac < 0. or energy < 19.77:
-        return 0.
-    return frac
+    condition = (frac < 0.) | (energy < 19.77)
+    return np.where( condition, 0., frac )
 
 def NR_QP_eFraction(energy):
     logE = np.log10(energy)
     a, b, c, d, e, f, g =  1.37928294, 1.62782641, -3.64361207, 2.25802903, 0.07210282, -0.31126613, -0.00495869
     frac = a/logE/logE + b/logE + c + d*logE + e*logE*logE + f*logE*logE*logE + \
            e*logE*logE*logE*logE + g*logE*logE*logE*logE*logE
-    if frac > 1.0 or energy < 19.77:
-        return 1.0
-    return frac
+    condition = (frac > 1.0) | (energy < 19.77)
+    return np.where( condition, 1.0, frac )
 
 def NR_triplet_eFraction(energy):
     x = np.log10(energy)
     a, b, c, d, e, f, g, h =  -7.73003451, 17.1117164, -12.0306409, 4.388470, -2.5361635, 0.661017, -8.41417e-2,  4.2301e-03
     frac =  a/x + b + c*x + d*x*x*x + e*x*x*x*x + f*x*x*x*x*x + g*x*x*x*x*x*x + h*x*x*x*x*x*x*x
-    if frac < 0 or energy < 19.77:
-        return 0.
-    return frac
+    condition = (frac < 0.) | (energy < 19.77)
+    return np.where( condition, 0., frac)
 
 def NR_singlet_eFraction(energy):
     x = np.log10(energy)
@@ -68,33 +63,39 @@ def NR_singlet_eFraction(energy):
     e, f, g, h = -6.92781245e+01,  2.87318953e+01, -7.05306162e+00,  1.03483204e+00
     i, j  = -8.39958299e-02,  2.90462675e-03
     frac = a/x + b + c*x + d*x*x*x + e*x*x*x*x + f*x*x*x*x*x + g*x*x*x*x*x*x + h*x*x*x*x*x*x*x + i*x*x*x*x*x*x*x*x + j*x*x*x*x*x*x*x*x*x
-    if frac < 0. or energy < 19.77:
-        return 0.
-    return frac
+    condition = (frac < 0.) | (energy < 19.77)
+    return np.where( condition, 0., frac)
 
 
 #combine the above functions into a single function
 def GetEnergyChannelFractions(energy, interaction):
     #returns the mean fraction of energy in
     # the singlet, triplet, QP, and IR channels
-    energy = min([energy, 1.0e5])
+    maxEnergy = 1.0e5
+    condition = (energy > maxEnergy)
+    energy = np.where( condition, maxEnergy, energy )
     # energy -- recoil energy in eV
     if interaction == "ER":
         singlet = ER_singlet_eFraction(energy)
         triplet = ER_triplet_eFraction(energy)
         QP      = ER_QP_eFraction(energy)
-        IR      = max([0., energy-singlet-triplet-QP])
+        res     = energy-singlet-triplet-QP
+        cond    = (res < 0.)
+        IR      = np.where( cond, 0., res )
     else:
         if interaction == "NR":
             singlet = NR_singlet_eFraction(energy)
             triplet = NR_triplet_eFraction(energy)
             QP      = NR_QP_eFraction(energy)
-            IR      = max([0., energy-singlet-triplet-QP])
+            res     = energy-singlet-triplet-QP
+            cond    = (res < 0.)
+            IR      = np.where( cond, 0., res )
         else:
             print("Please specify ER or NR for interaction type!")
             return 1
 
     return singlet, triplet, QP, IR
+
 
 #HeST main yields function
 def GetSingletYields(energy, interaction):
@@ -111,8 +112,8 @@ def GetSingletYields(energy, interaction):
 
     ERsingletFraction = 0.85824614
     NRsingletFraction = 0.72643866
-    if energy < 19.77:
-        return 0.
+    cond = (energy < 19.77)
+    energy = np.where(cond, 0., energy)
     if interaction == "ER":
         return meanERyield*energy/detection_gain * ERsingletFraction #convert from phe/keV to n_photons
     else:
@@ -120,6 +121,7 @@ def GetSingletYields(energy, interaction):
             return meanNRyield*energy/detection_gain *NRsingletFraction #convert from phe/keV to n_photons
         else:
             print("Please specify ER or NR for interaction type!")
+
 
 def Get_Quasiparticles(qp_energy, T=2.): 
     #returns the mean number of quasiparticles given 
@@ -133,47 +135,63 @@ def Get_Quasiparticles(qp_energy, T=2.):
  
     #slope_t2, b_t2 = 1244.04521473, 29.10987933 #linear fit params
     #return slope_t2*qp_energy + b_t2
-
     return  Coeff*pow(qp_energy,Pow) 
 
+
+def GetTripletEnergy( triplet_fraction, singlet_fraction, singlet_energy ):
+    return (triplet_fraction/singlet_fraction) * singlet_energy
+
+def GetQPEnergy( QP_fraction, singlet_fraction, singlet_energy ):
+    return (QP_fraction/singlet_fraction) * singlet_energy
 
 def GetQuanta(energy, interaction, T=2.):
     # energy -- recoil energy in eV
     # interaction -- "ER" or "NR"
-    # T -- ambient QP temperature in Kelvin for QP generation
- 
+
+    if np.isscalar(energy):
+        energy = np.array([energy])
+        
     singlet_fraction, triplet_fraction, QP_fraction, IR_fraction = GetEnergyChannelFractions(energy, interaction)
-    nSingletPhotons = GetSingletYields(energy, interaction)
-    singlet_energy = nSingletPhotons * Singlet_PhotonEnergy
+    #nSingletPhotons = GetSingletYields(energy*singlet_fraction, interaction)
+    #singlet_energy = nSingletPhotons * Singlet_PhotonEnergy
+    singlet_energy = singlet_fraction*energy
+    nSingletPhotons = singlet_energy / Singlet_PhotonEnergy
+    
     Fano = 1.0
-    if singlet_fraction > 0.:
-        triplet_energy = (triplet_fraction/singlet_fraction) * singlet_energy
-        QP_energy = (QP_fraction/singlet_fraction) * singlet_energy
-    
-        nTripletPhotons = triplet_energy / Triplet_PhotonEnergy #(eV / (eV/ph))
-    
-        scint_energy = singlet_energy + triplet_energy
-    
-        nPhotons = nSingletPhotons + nTripletPhotons
-    
-        nSing_actual = max([0, int( np.random.normal(nSingletPhotons, np.sqrt(Fano*nSingletPhotons)) )])
-        nTrip_actual = max([0, int( np.random.normal(nTripletPhotons, np.sqrt(Fano*nTripletPhotons)) )])
+    cond = (singlet_fraction > 0.)
+    triplet_energy = np.where( cond, GetTripletEnergy( triplet_fraction, singlet_fraction, singlet_energy ), 0. )
+    QP_energy = np.where( cond, GetQPEnergy( QP_fraction, singlet_fraction, singlet_energy ), energy )
 
-        scint_energy_actual = nSing_actual * Singlet_PhotonEnergy + nTrip_actual * Triplet_PhotonEnergy
-    
-        #assume the fano fluctuations are anti-correlated with the QP energy
-        QP_energy += scint_energy - scint_energy_actual 
-        nQP_actual = max([0, int(Get_Quasiparticles(QP_energy, T=T))])
-    else:
-        nSing_actual = 0
-        nTrip_actual = 0
-        QP_energy = energy
-        nQP = int(Get_Quasiparticles(QP_energy, T=T))
-        nQP_actual = max([0, int( np.random.normal(nQP, np.sqrt(Fano*nQP)) )])
-    
+    nTripletPhotons = triplet_energy / Triplet_PhotonEnergy #(eV / (eV/ph))
+
+    scint_energy = singlet_energy + triplet_energy
+
+    nPhotons = nSingletPhotons + nTripletPhotons
+
+    nSing_actual = (np.random.normal(nSingletPhotons, np.sqrt(Fano*nSingletPhotons))).astype(int)
+    cond = ( nSing_actual > 0 )
+    nSing_actual = np.where( cond, nSing_actual, 0 ).astype(int)
+
+    nTrip_actual = (np.random.normal(nTripletPhotons, np.sqrt(Fano*nTripletPhotons)) ).astype(int)
+    cond = ( nTrip_actual > 0 )
+    nTrip_actual = np.where( cond, nTrip_actual, 0 ).astype(int)
+
+    scint_energy_actual = nSing_actual * Singlet_PhotonEnergy + nTrip_actual * Triplet_PhotonEnergy
+
+    #assume the fano fluctuations are anti-correlated with the QP energy
+    QP_energy += scint_energy - scint_energy_actual
+    cond = (QP_energy > 0)
+    QP_energy = np.where( cond, QP_energy, 0. )
+
+    nQP = (Get_Quasiparticles(QP_energy, T=T)).astype(int)
+    #if there are no photons, apply fano fluctuations directly to QPs
+    cond = ( scint_energy > 0. )
+    nQP_actual = np.where( cond, nQP, ( np.random.normal(nQP, np.sqrt(Fano*nQP)) ).astype(int) )
+
+    cond = (nQP_actual > 0)
+    nQP_actual = np.where( cond, nQP_actual, 0 ).astype(int)
+
     return QuantaResult( nSing_actual, nTrip_actual, nQP_actual )
-
-
 
 # Quasiparticle functions
 
@@ -202,13 +220,20 @@ def getMaxY_Temp(T):
     return  max(f)*1.05
 
 
-def Random_QPmomentum(T=2.):
+def Random_QPmomentum_old(T=2.):
     maxY = getMaxY_Temp(T)
     while True:
         pTry = np.random.uniform(0., 4.7)
         yTry = np.random.uniform(0., maxY)
         if yTry <  pTry*pTry/(np.exp(QP_dispersion(pTry)/(T/11606.)) -1.):
             return pTry
+
+def Random_QPmomentum(T=2., size=1):
+    p = np.linspace(0, 4.7, 1000)  # Adjust the range as needed
+    probabilities = p*p/(np.exp(QP_dispersion(p)/(T/11606.)) -1.)
+    cumulative_probabilities = np.cumsum(probabilities) / np.sum(probabilities)
+    inverse_cdf = np.interp(np.random.rand(size), cumulative_probabilities, p)
+    return inverse_cdf
 
 def generate_quasiparticles(energy, T=2.):
     #make test draws for momentum and probability
