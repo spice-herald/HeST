@@ -4,7 +4,7 @@ setup(
     name='HeST',
     version='0.2.0',
     packages=find_packages(),
-    install_requires=[ 'numpy', 'scipy', 'detprocess', 're'],
+    install_requires=[ 'numpy', 'scipy', 'detprocess'],
     package_data={
         'HeST': ['*.npy'],
     }
