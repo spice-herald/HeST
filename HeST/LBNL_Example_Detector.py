@@ -155,7 +155,7 @@ def liquid_conditions(x, y, z):
 
 #create the detector using the conditions above
 DetectorExample_LBNL = detection.VDetector( [wall_conditions, top_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions,
-                                adsorption_gain=6.0, evaporation_eff=0.60, CPDs=[cpd1, cpd2, cpd3, cpd4, cpd5, cpd6, cpd7, cpd8],
+                                adsorption_gain=6.0e-3, evaporation_eff=0.60, CPDs=[cpd1, cpd2, cpd3, cpd4, cpd5, cpd6, cpd7, cpd8],
                                 photon_reflection_prob=0., QP_reflection_prob=0.)
 
 radius = 2.381
