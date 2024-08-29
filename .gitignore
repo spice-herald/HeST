@@ -5,8 +5,6 @@ build/
 lib/
 
 #That should mostly take care of the main thing
-HeST.egg-info/
-HeST.egg-info/PKG-INFO
-HeST.egg-info/SOURCES.txt
-HeST.egg-info/top_level.txt
-HeST.egg-info/dependency_links.txt
+*.egg-info/
+*.egg/
+HeSt/__pycache__/

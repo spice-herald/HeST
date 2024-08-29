@@ -254,9 +254,10 @@ class VDetector:
                     hitProbs = [0.]*nCPDs
                     for n in range(nQPs):
 
-                        hit, time, n, xs, ys, zs, p, surf, cpd_id = QP_propagation(pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T)
-                        if hit > 0:
-                            hitProbs[cpd_id] += 1.
+                        hits, times, cpd_ids = QP_propagation(nQPs, pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T)
+                        print(cpd_ids)
+                        if len(hits) > 0:
+                            hitProbs[cpd_ids] += 1.
                         
                                 
                     hitProbs = np.array(hitProbs)/nQPs
@@ -381,8 +382,19 @@ def wall_reflect(X, Y, dx, dy, dz):
     return dx, dy, dz
 
 def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.):
-    
-    #make sure the we have an array of starting positions for each QP
+    """Tracking of Quasiparticles through medium. 
+
+    Args:
+        nQPs (int): The number of quasiparticles being tracked at a given time.  
+        start (ndarray): the initial location of the quasiparticles.  
+        conditions (func): list of function assigning the conditions on the particles
+        reflection_prob (float): the probability of reflection on certain surfaces (we don't really know what this is, and I don't ) 
+        evap_eff (float, optional): _description_. Defaults to 0.60.
+        T (_type_, optional): _description_. Defaults to 2..
+
+    Returns:
+        _type_: _description_
+    """
     if np.isscalar(nQPs):
         X = np.full(nQPs, start[0])
         Y = np.full(nQPs, start[1])
@@ -459,6 +471,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
         if len(surface_type[check3]) > 0:
             r = np.random.random(len(surface_type[check3]))
             cond = (r > reflection_prob)
+            #this section needs a lot of work, we need to adjust the way this works 
             alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
             
             #handle reflections
