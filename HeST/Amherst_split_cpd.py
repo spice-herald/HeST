@@ -13,7 +13,7 @@ def sensor1_conditions(x, y, z):
     return (x*x + y*y < radius*radius) & (x>0)& (z < height)| (x*x + y*y >= radius*radius) , boundary_type
 
 def sensor2_conditions(x, y, z):
-    boundary_type = "CPD0"
+    boundary_type = "CPD1"
     radius = 3.8
     height = 3.3
     return (x*x + y*y < radius*radius) &  (x<0)&(z < height)| (x*x + y*y >= radius*radius) , boundary_type

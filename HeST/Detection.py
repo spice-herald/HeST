@@ -389,34 +389,44 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
         start (ndarray): the initial location of the quasiparticles.  
         conditions (func): list of function assigning the conditions on the particles
         reflection_prob (float): the probability of reflection on certain surfaces (we don't really know what this is, and I don't ) 
-        evap_eff (float, optional): _description_. Defaults to 0.60.
-        T (_type_, optional): _description_. Defaults to 2..
+        evap_eff (float, optional): The evaporation efficiency through the surface. Defaults to 0.60.
+        T (float, optional): the thermal temperature of the helium I think, probably in mk. Defaults to 2..
 
     Returns:
         _type_: _description_
     """
+    #if there is only one quasiparticle, we still need to prepare an array for it to be tracked
     if np.isscalar(nQPs):
         X = np.full(nQPs, start[0])
         Y = np.full(nQPs, start[1])
         Z = np.full(nQPs, start[2])
         start = np.array([X, Y, Z])
     
+    #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
+    #randomely assign the phi and theta directions, each with an array the size of the number of quasiparticles. 
     phi, arctheta = np.random.uniform(0., 2.*np.pi, size=nQPs), np.random.uniform(-1., 1, size=nQPs)
     theta = np.arccos(arctheta)
+    #prepare the vecctors of direction
     dx = np.cos( phi ) * np.sin( theta )
     dy = np.sin( phi ) * np.sin( theta )
     dz = np.cos(theta)
 
     #dx, dy, dz = 0., 0., 1
+    #prepare time
     total_time = np.zeros(nQPs, dtype=float)
     n=0
     #xs, ys, zs = [start[0]], [start[1]], [start[2]]
+    #This draws from a specific distribution that he wrote
     momentum = Random_QPmomentum(T=T, size=nQPs) #keV/c
     Eb = 0.00062
+    #prepare the alive condition. This is whether or not the qp is still moving, or we have lost it (down-converted, absorbed, etc.)
     alive = np.ones(nQPs, dtype=int)
-    cond = momentum < 1.1
+    #ok this is really stupid. So he's using booleans very loosely here, True = 1, False = 0. 
+    #the idea is that we are only seeing above the phonon range, which is incorrect
+    cond = momentum <  1.1
     alive = np.where( cond, 0, alive)
+    print(alive)
 
     velocity = QP_velocity(momentum) #m/s
     energy = QP_dispersion(momentum) #eV
@@ -681,7 +691,6 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
     hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T)
     
     coincidence = 0
-    #add in baseline noise for each detected photon
     for i in range(nCPDs):
         cond = (cpd_ids == i)
         chAreas[i] = sum(hits[cond] + detector.get_adsorption_gain()) # eV
