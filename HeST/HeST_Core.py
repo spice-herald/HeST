@@ -15,7 +15,7 @@ class QuantaResult:
 
 class CPD_Signal:
     def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]]):
-        if arrivalTimes_us == [[]]:
+        if len(arrivalTimes_us) == 0:
             arrivalTimes_us = [[]]*len(chArea_eV)
         self.area_eV = area_eV #total pulse area
         self.chArea_eV = chArea_eV # individual CPD pulse areas
@@ -73,7 +73,13 @@ def GetEnergyChannelFractions(energy, interaction):
     # the singlet, triplet, QP, and IR channels
     maxEnergy = 1.0e5
     condition = (energy > maxEnergy)
+    #This returns an array where, if the energy is greater than the max energy, 
+    #it is just created to be the maximum energy, and is otherwise put into the energy
+    #channel.
+    #I think this might be because the software cannot account for a greater energy than a certain amount
+    
     energy = np.where( condition, maxEnergy, energy )
+    
     # energy -- recoil energy in eV
     if interaction == "ER":
         singlet = ER_singlet_eFraction(energy)

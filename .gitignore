@@ -1,0 +1,12 @@
+#This is a gitignore file which should hopefully be used to ignore the venv that I have set up. 
+py_env/
+bin/
+build/
+lib/
+
+#That should mostly take care of the main thing
+HeST.egg-info/
+HeST.egg-info/PKG-INFO
+HeST.egg-info/SOURCES.txt
+HeST.egg-info/top_level.txt
+HeST.egg-info/dependency_links.txt

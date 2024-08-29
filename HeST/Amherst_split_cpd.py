@@ -1,20 +1,32 @@
 import HeST.Detection as detection
 import os
 import numpy as np
-
 #The detector geometry is defined from the point of view of particle paths.
 # We essentially want to define various "surface conditions" where the particle paths are obstructed
 # These functions also carry a "boundary_type", so that we can keep track if the particle is obstructed by
 # a CPD, or a wall, and how it may reflect off of a given wall.
 
-def sensor_conditions(x, y, z):
+def sensor1_conditions(x, y, z):
     boundary_type = "CPD0"
     radius = 3.8
     height = 3.3
-    return (x*x + y*y < radius*radius) & (z < height)| (x*x + y*y >= radius*radius) , boundary_type
+    return (x*x + y*y < radius*radius) & (x>0)& (z < height)| (x*x + y*y >= radius*radius) , boundary_type
+
+def sensor2_conditions(x, y, z):
+    boundary_type = "CPD0"
+    radius = 3.8
+    height = 3.3
+    return (x*x + y*y < radius*radius) &  (x<0)&(z < height)| (x*x + y*y >= radius*radius) , boundary_type
+
+
+
+
+
 baseline_noise = [0., 0.]
 phonon_conversion = 0.25
-cpd = detection.VCPD(sensor_conditions, baseline_noise, phonon_conversion)
+cpd1 = detection.VCPD(sensor1_conditions, baseline_noise, phonon_conversion)
+cpd2 = detection.VCPD(sensor2_conditions, baseline_noise, phonon_conversion)
+
 
 
 
@@ -40,12 +52,8 @@ def liquid_conditions(x, y, z):
     radius = 3. #cm
     bottom = 0. #cm
     return ((x*x + y*y < radius*radius) & (z < height) & (z > bottom))
-    
-DetectorExample_Amherst = detection.VDetector( [wall_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions, adsorption_gain=6.0e-3, evaporation_eff=0.60, CPDs=[cpd] )
-DetectorExample_Amherst.load_LCEmap(os.path.dirname(__file__)+'/LCE_map_amherstExample_41x41x30_noReflections.npy')
-DetectorExample_Amherst.set_LCEmap_positions([np.linspace(-3., 3., 41), np.linspace(-3., 3., 41), np.linspace(0., 2.75, 30)])
-DetectorExample_Amherst.load_QPEmap(os.path.dirname(__file__)+'/QP_map_amherstExample_41x41x30_noReflections.npy')
-DetectorExample_Amherst.set_QPEmap_positions([np.linspace(-3., 3., 41), np.linspace(-3., 3., 41), np.linspace(0., 2.75, 30)])
+   
 
+Amherst_split_cpd = detection.VDetector([wall_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions, CPDs=[cpd1, cpd2], adsorption_gain=6.0e-3, evaporation_eff=0.60)
 
-
+ 
