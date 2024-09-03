@@ -1,4 +1,4 @@
-from scipy.interpolate import interpn
+from scipy.interpolate import interpn, interp1d
 from detprocess import Template
 import numpy as np
 import re
@@ -254,7 +254,7 @@ class VDetector:
                     hitProbs = [0.]*nCPDs
                     for n in range(nQPs):
 
-                        hits, times, cpd_ids = QP_propagation(nQPs, pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T)
+                        hits, times, cpd_ids = QP_propagation(nQPs, pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T, debug=True)
                         print(cpd_ids)
                         if len(hits) > 0:
                             hitProbs[cpd_ids] += 1.
@@ -373,7 +373,9 @@ def extract_number(s):
     return None  # Return None if no digits are found
 
 # Define a function to handle reflections off of walls
-def wall_reflect(X, Y, dx, dy, dz):
+def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
+    #now we need to define a new function which can do specular and diffuse
+    #ok so you take the normal vector and normalize it (this means you need some method for coming up with the normal vector. Actually this is easy, because it is a circle)
     normal_vector = np.array([X, Y, 0.])
     normal_vector = normal_vector / np.linalg.norm(normal_vector)
     incident_vector = np.array([dx, dy, dz])
@@ -381,9 +383,9 @@ def wall_reflect(X, Y, dx, dy, dz):
     dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
     return dx, dy, dz
 
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.):
-    """Tracking of Quasiparticles through medium. 
-
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2., debug= False):
+    """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
+   
     Args:
         nQPs (int): The number of quasiparticles being tracked at a given time.  
         start (ndarray): the initial location of the quasiparticles.  
@@ -411,14 +413,18 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
     dx = np.cos( phi ) * np.sin( theta )
     dy = np.sin( phi ) * np.sin( theta )
     dz = np.cos(theta)
+    if debug: 
+        dx =  np.full(shape=nQPs, fill_value=0.0)
+        dy = np.full(shape=nQPs, fill_value=0.0)
+        dz = np.full(shape=nQPs, fill_value=-1.0)
 
     #dx, dy, dz = 0., 0., 1
     #prepare time
     total_time = np.zeros(nQPs, dtype=float)
     n=0
     #xs, ys, zs = [start[0]], [start[1]], [start[2]]
-    #This draws from a specific distribution that he wrote
-    momentum = Random_QPmomentum(T=T, size=nQPs) #keV/c
+    #This draws from a k**2 distribution, essentially trying to follow the density of states
+    momentum = Random_QPmomentum(nQPs) #keV/c
     Eb = 0.00062
     #prepare the alive condition. This is whether or not the qp is still moving, or we have lost it (down-converted, absorbed, etc.)
     alive = np.ones(nQPs, dtype=int)
@@ -426,48 +432,61 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
     #the idea is that we are only seeing above the phonon range, which is incorrect
     cond = momentum <  1.1
     alive = np.where( cond, 0, alive)
-    print(alive)
+    #this spits out an error if you only look at phonon population... that's really weird. 
+    #It seems to be an issue with one of the checks.
 
+    #velocity and energy, both arrays of length nQP
     velocity = QP_velocity(momentum) #m/s
     energy = QP_dispersion(momentum) #eV
+    #why do we set this condition at all? that makes no sense
     cond = (velocity > 0.)
     alive = np.where( cond, alive, 0.)
     evaporated = np.zeros( nQPs, dtype=bool)
     
     deposits = np.zeros(nQPs, dtype=float)
     ids = np.full(nQPs, None)
+    #we prepare a boolean for evaporated, meaning that evaporated will be a mask that gets added to, then deposits is a float so idk what that is for, ids is for which cpd?
+
     while sum(alive) > 0:
         n+=1
+        #prepare an array for the living ones (alive is bool so this is really just not 0)
         living = ( alive > 0.5 )
-        
         #print(Z[living])
+        #find a surface intersection
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X[living], Y[living], Z[living]]), np.array([dx[living], dy[living], dz[living]]), conditions)
+        #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
         cond = (surface_type != None)
+        #eliminate (from the living) the values that have escaped without intersecting a surface (which should be none for this geometry)
         alive[living] = np.where( cond, alive[living], 0)
+        #reset the living parameter and indices
         living = ( alive > 0.5 )
         living_indices = np.where(living)[0]
-
+        
+        #set the new X1, Y1, Z1 space to exclude any particles that have already made it through
         X1, Y1, Z1 = X1[cond], Y1[cond], Z1[cond]
         surface_type = surface_type[cond]
         
+        #finding the time it took to go from initial point to intersection point
         dist_sq = (pow(X1-X[living],2.)+pow(Y1-Y[living], 2.)+pow(Z1-Z[living],2.)).astype(float)      
         total_time[living] = total_time[living] + np.sqrt(dist_sq)/(velocity[living]*1.0e-4)  #us
         
         check1 = ( surface_type == "Liquid")
-        #print(surface_type)
+        
+        #checking if it hit the surface of the liquid helium
         if len(surface_type[check1]) > 0:
-            
+            #this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
             evap, velocity[living_indices[check1]], dx[living_indices[check1]], dy[living_indices[check1]], dz[living_indices[check1]] = evaporation(momentum[living][check1], energy[living][check1], velocity[living][check1], [dx[living][check1], dy[living][check1], dz[living][check1]])
             #print("Evap", sum(evap))
             cond = (evap < 0.5) | (np.random.random(len(evap)) > evap_eff ) #check if evaporation was successful
             alive[living_indices[check1]] = np.where(cond, 0, alive[living_indices[check1]]) #kill off QPs that didn't evaporate
             evaporated[living_indices[check1]] = np.where( cond, evaporated[living_indices[check1]], True )
+            #ok so we just add 0.1 to Z1 to make sure it is in a new box. 
             X[living_indices[check1]] = X1[check1]
             Y[living_indices[check1]] = Y1[check1]
             Z[living_indices[check1]] = Z1[check1]+0.1
                                             
-        #print(surface_type)
         check2 = np.array(["CPD" in str(s) for s in surface_type])
+        print(f'Surace type>: {surface_type}, check2: {check2}')
         #print("Hit %i CPDs" % len(surface_type[check2]))
         if len(surface_type[check2]) > 0:
             cpd_id = np.vectorize(extract_number)(surface_type[check2])
@@ -490,6 +509,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
             checkZ = (surface_type == "Z")
             checkXY = (surface_type == "XY")
             
+            print(f'lenght of checkX: {list(checkX).count(1)}, length of checkY: {list(checkY).count(1)}, length of checkZ: {list(checkZ).count(True)}, length of checkXY: {list(checkXY).count(True)}')
             dx[living_indices[checkX]] = -1.*dx[living][checkX] 
             dy[living_indices[checkY]] = -1.*dx[living][checkY] 
             dz[living_indices[checkZ]] = -1.*dx[living][checkZ] 
@@ -688,7 +708,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
         
-    hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T)
+    hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T, debug=False)
     
     coincidence = 0
     for i in range(nCPDs):

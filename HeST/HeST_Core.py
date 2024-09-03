@@ -1,4 +1,5 @@
 import scipy.special as scispec
+from scipy.interpolate import interp1d
 import numpy as np
 
 #Global constants
@@ -200,24 +201,31 @@ def GetQuanta(energy, interaction, T=2.):
     return QuantaResult( nSing_actual, nTrip_actual, nQP_actual )
 
 # Quasiparticle functions
+def GetInterpFunc(d_path):
+    """Creates an linear interpolation function from data found at the file path below,, giving us the ability to convert from resistance to temperature. 
+    returns:
+        Interpoltion function: If input exceeds range of the data function returns a NaN"""
+    data = np.loadtxt(d_path, delimiter=',')
+    X = data[:,0]
+    Y = data[:,1]
+    return interp1d(X,Y, kind = 'linear')
+    
 
-def QP_dispersion(p):
-    params = [-2.26246976e-03, 9.13297690e-01, -9.43774817e-01, 2.81293178, -3.64233027, \
-              2.38490219, -8.76986870e-01, 1.82682488e-01, -2.00519847e-02, 8.99140180e-04]
-    e = 0.
-    for i in range(len(params)):
-        e += params[i]*pow(p, i)
-    return e/1000. #returns energy in eV
+def QP_dispersion(p ):
+    """generate the energy of the particle in meV
 
-def QP_velocity(p):
-    params = [236.47194598487116, 142.7789374022186, -760.901788379717, 2197.6009596586828, \
-              -3370.919165124788, 2734.173890494752, -1262.64114986808, 341.97960568115644,\
-              -53.286858540286154, 4.369764313313597, -0.14355574751607653]
+    Args:
+        p (int): the momentum of the quasiparticle of interest 
+        interp (funct): function to relate momentum and energy  
+    """
+    interp = GetInterpFunc('./dispersion_data.csv')
+    energy = interp(p)
+    return energy * 1e-3 #This is in eV 
 
-    v = 0.
-    for i in range(len(params)):
-        v += params[i]*pow(p, i)
-    return v
+def QP_velocity(p ):
+    interp = GetInterpFunc('./velocity_data.csv')
+    velocity = interp(p)
+    return velocity  #This is in mm/s. Yes that is correct, milimeters per second.
 
 
 def getMaxY_Temp(T):
@@ -234,12 +242,25 @@ def Random_QPmomentum_old(T=2.):
         if yTry <  pTry*pTry/(np.exp(QP_dispersion(pTry)/(T/11606.)) -1.):
             return pTry
 
+#I'm not sure how this works, I think I shall rewrite one that draws from the k^2 distribution
 def Random_QPmomentum(T=2., size=1):
-    p = np.linspace(0, 4.7, 1000)  # Adjust the range as needed
+    p = np.linspace(.15, 4.7, 1000)  # Adjust the range as needed
     probabilities = p*p/(np.exp(QP_dispersion(p)/(T/11606.)) -1.)
     cumulative_probabilities = np.cumsum(probabilities) / np.sum(probabilities)
     inverse_cdf = np.interp(np.random.rand(size), cumulative_probabilities, p)
     return inverse_cdf
+
+
+def Random_QPmomentum(number):
+    def k_squared_distribution(u):
+        N = (4.7**3 - .15**3)/3
+        c = .15**3/(3 * N)
+        return (3 * N* (u + c))**(1/3)
+    num_QP = np.random.uniform(size=number)
+    return k_squared_distribution(num_QP)
+
+
+ 
 
 def generate_quasiparticles(energy, T=2.):
     #make test draws for momentum and probability
