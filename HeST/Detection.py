@@ -2,6 +2,7 @@ from scipy.interpolate import interpn, interp1d
 from detprocess import Template
 import numpy as np
 import re
+import matplotlib.pyplot as plt
 from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity 
 from .HeST_Core import Singlet_PhotonEnergy
 
@@ -383,7 +384,7 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
     dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
     return dx, dy, dz
 
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2., debug= False):
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2., debug= False, plot_3d=False):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -403,7 +404,13 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
         Y = np.full(nQPs, start[1])
         Z = np.full(nQPs, start[2])
         start = np.array([X, Y, Z])
-    
+
+    #if the plot3d is true, then we want to record the path traveled. This means, for each particle, recording it's starting and ending point. Sadly, this also means lists. 
+    if plot_3d:
+        particles_x = np.zeros(shape=(nQPs, 20))
+        particles_y = np.zeros(shape=(nQPs, 20))
+        particles_z =  np.zeros(shape=(nQPs, 20))
+ 
     #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
     #randomely assign the phi and theta directions, each with an array the size of the number of quasiparticles. 
@@ -439,14 +446,17 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
     velocity = QP_velocity(momentum) #m/s
     energy = QP_dispersion(momentum) #eV
     #why do we set this condition at all? that makes no sense
-    cond = (velocity > 0.)
-    alive = np.where( cond, alive, 0.)
     evaporated = np.zeros( nQPs, dtype=bool)
     
     deposits = np.zeros(nQPs, dtype=float)
     ids = np.full(nQPs, None)
     #we prepare a boolean for evaporated, meaning that evaporated will be a mask that gets added to, then deposits is a float so idk what that is for, ids is for which cpd?
-
+    #here we can also add the particle locations
+    if plot_3d:
+        living = alive > 0.5
+        particles_x[:, 0][living] = X[living]
+        particles_y[:, 0][living] = Y[living]
+        particles_z[:, 0][living] = Z[living]
     while sum(alive) > 0:
         n+=1
         #prepare an array for the living ones (alive is bool so this is really just not 0)
@@ -483,6 +493,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
             #ok so we just add 0.1 to Z1 to make sure it is in a new box. 
             X[living_indices[check1]] = X1[check1]
             Y[living_indices[check1]] = Y1[check1]
+            #this is bugged a little, the direction that comes from evaporation seems to be wrong.
+            #I've looked into this more now, I'm not actually sure this is bugged. 
             Z[living_indices[check1]] = Z1[check1]+0.1
                                             
         check2 = np.array(["CPD" in str(s) for s in surface_type])
@@ -522,6 +534,31 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, T=2.
             Y[living_indices[check3]] = Y1[check3]
             Z[living_indices[check3]] = Z1[check3]
         #print(alive)
+        if plot_3d: 
+            particles_x[:, n][living_indices] = X[living_indices]
+            particles_y[:, n][living_indices] = Y[living_indices]
+            particles_z[:, n][living_indices] = Z[living_indices]
+    if plot_3d:
+        ax = plt.figure().add_subplot(projection ='3d')
+        for i in range(nQPs):
+            ax.plot(particles_x[i,:], particles_y[i,:], particles_z[i,:], '-o')
+        ax.set_xlim(-3.8, 3.8)
+        ax.set_ylim(-3.8, 3.8)
+        def walls(points, radius): 
+            theta = np.linspace(0, 2 * np.pi, points)
+
+            x = radius *np.cos(theta)
+            y = radius * np.sin(theta)
+            return x,y
+        x,y= walls(100, 3.)
+        ax.plot(x,y)
+        xx, yy = np.meshgrid(np.linspace(-3.0, 3.0, 50), np.linspace(-3.0, 3.0, 50))
+        z = np.ones_like(xx) 
+        ax.plot_surface(xx, yy, z * 2.75, alpha = 0.2,  label = 'Liquid Surface')
+        z_cpd = z * 3.3
+        ax.plot_surface(xx, yy, z_cpd, alpha = 0.2, label = 'CPD Level' )
+        ax.legend()
+        #print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
     hit = (deposits > 0.)
     return deposits[hit], total_time[hit], ids[hit] 
         
@@ -666,7 +703,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, plot_3d = False):
     '''
     Attempt to simulate the CPD response for quasiparticles.
 
@@ -708,7 +745,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.):
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
         
-    hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T, debug=False)
+    hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T, debug=debug, plot_3d = plot_3d)
     
     coincidence = 0
     for i in range(nCPDs):
