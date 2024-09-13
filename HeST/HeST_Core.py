@@ -15,13 +15,14 @@ class QuantaResult:
         self.Quasiparticles = Quasiparticles
 
 class CPD_Signal:
-    def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]]):
+    def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]], bounced_flag = 0):
         if len(arrivalTimes_us) == 0:
             arrivalTimes_us = [[]]*len(chArea_eV)
         self.area_eV = area_eV #total pulse area
         self.chArea_eV = chArea_eV # individual CPD pulse areas
         self.coincidence = coincidence #number of CPDs hit
         self.arrivalTimes_us = arrivalTimes_us #time at which the particle hits the CPD
+        self.bounce_flag = bounced_flag
 
 # Polynomial functions to get the energy channel partitioning for ERs and NRs
 

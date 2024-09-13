@@ -7,7 +7,7 @@ from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity
 from .HeST_Core import Singlet_PhotonEnergy
 
 class VCPD:
-    def __init__(self, surface_condition, baselineNoise, phononConversion=0.25):
+    def __init__(self, surface_condition, baselineNoise, phononConversion=0.25, bounced_flag = 0):
         '''
         Create a Virtual CPD class to keep track of individual CPDs
         and add them to the VDetector object.
@@ -24,6 +24,7 @@ class VCPD:
         self.surface_condition = surface_condition
         self.baselineNoise     = np.array( baselineNoise )
         self.phononConversion  = phononConversion
+        self.bounce_flag       = bounced_flag
 
 
     def set_surface_condition(self, f1):
@@ -39,6 +40,8 @@ class VCPD:
         return self.baselineNoise
     def get_phononConversion(self):
         return self.phononConversion
+    def get_bounces(self):
+        return self.bounce_flag
 
     def check_surface(self, x, y, z):
         return self.surface_condition(x, y, z)
@@ -140,6 +143,8 @@ class VDetector:
         self.photon_reflection_prob = p1
     def set_QP_reflection_prob(self, p1):
         self.QP_reflection_prob = p1
+    def set_diffuse_prob(self, p1):
+        self.diffuse_prob = p1
         
     def get_surface_conditions(self):
         return list(self.surface_conditions)
@@ -179,6 +184,8 @@ class VDetector:
         return self.photon_reflection_prob
     def get_QP_reflection_prob(self):
         return self.QP_reflection_prob
+    def get_diffuse_prob(self):
+        return self.diffuse_prob
     
     
     def create_LCEmap(self, x_array, y_array, z_array, nPhotons=10000, filestring="detector_LCEmap"):
@@ -322,73 +329,9 @@ def find_surface_intersection(start, direction, conditions):
         
     return coords[0], coords[1], coords[2], surface_type
 
-"""def diffuse_and_specular_reflection(alive, momentum, energy,  X, Y, Z, dx, dy, dz, living, living_indices,  surface_type, diffuse_prob ):
-    #what do we want this to look like ??
-    #I'm thinking, in the discrete case of 1, we take in the particle, and then generate a random number (uniformely) from 0, 1. If that cut is true, then we do specular reflection (code is already written)
-    #if that is false, then we do diffuse. 
-    specular_cut = np.random.uniform(size = alive[living_indices]) > diffuse_prob
-    #specular is a known thing, so I'll just copy that here in a bit. Let's do diffuse now
-    
 
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Diffuse ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    diffuse_momentum = momentum[~specular_cut]
-    #now we need to define a random variable, which will be one of the new momentum vectors. 
-    qp_1 = np.random.uniform(size = len(diffuse_momentum)) * diffuse_momentum
-    qp_2 = (diffuse_momentum - qp_1) * np.random.uniform(size = len(diffuse_momentum))
-    #now that we have defined the two new qps, we must choose the direction that they go in. 
-    #the incident vector matters here, we need phi to range from -pi/2 to pi/2 with the projection along the incident vector being zero. 
-    phi_1, arctheta_1 = np.random.uniform(np.pi/10,9 *  np.pi/10, size=len(qp_1)), np.random.uniform(-1., 1, size=len(qp_1))
-    #we need to identify what angle we are coming in at right now. then we just add that angle.
-    offset_angles_1 = np.arctan2(X, Y)
-    phi_1 += offset_angles_1
-    #now we have generated the random direction of one, we need to do that for another. 
-    phi_2, arctheta_2 = np.random.uniform(np.pi/10, 9 * np.pi/10,size = len(qp_2)), np.random.uniform(-1.0, 1.0, size= len(qp_2))
-
-    phi_2 += offset_angles_1
-    #prepare the direction of the vectors
-    theta_1 = np.arccos(arctheta_1)
-    theta_2 = np.arccos(arctheta_2)
-    dx_1 = np.cos( phi_1 ) * np.sin( theta_1 )
-    dy_1 = np.sin( phi_1 ) * np.sin( theta_1 )
-    dz_1 = np.cos(theta_1)
-    #now we do the same for the second group
-
-
-    dx_2 = np.cos( phi_2 ) * np.sin( theta_2 )
-    dy_2 = np.sin( phi_2 ) * np.sin( theta_2 )
-    dz_2 = np.cos(theta_2)
-    #ok now we have the directions, we have the momentum, we spew out at random directions, hopefully all still inside the geometry. We still need to do the case where it isn't diffuse. 
-    #however, I think this is good for the diffuse case 
-    
-
-    #~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Specular ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    specular_energy = energy[specular_cut]
-    specular_momentum = momentum[specular_cut]
-
-    #handle reflections
-    checkX = (surface_type == "X")
-    checkY = (surface_type == "Y")
-    checkZ = (surface_type == "Z")
-    checkXY = (surface_type == "XY")
-    
-    #how do I want to do this/// Same checks as above, we have dx, dy, dz. We need to also include living, and living_indices ? if we do that is pretty easy honestly.
-    dx[living_indices[checkX]] = -1.*dx[living][checkX] 
-    dy[living_indices[checkY]] = -1.*dx[living][checkY] 
-    dz[living_indices[checkZ]] = -1.*dx[living][checkZ] 
-    
-    if len(dz[living][checkXY]) > 0:
-        dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
-
-
-    X[living_indices[check3]] = X1[check3]
-    Y[living_indices[check3]] = Y1[check3]
-    Z[living_indices[check3]] = Z1[check3]
-    return X, Y, Z, dx, dy, dz, X_new, Y_new, Z_new, dx_1, dy_1, dz_1, dx_2, dy_2, dz_2"""
-
-
-def diffuse_and_specular(alive_new, living_indices, living, X1, Y1, Z1, dx, dy, dz,  diffuse_prob, surface_type):
-    """This is a function dedicated to outputing both specular and diffuse particles
-    This is a terribly coded function, it is because this is not an easily managable problem. It is poorly written up until this point, and I can't find a good way to get out of it. 
+def diffuse_and_specular(alive_new, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz,  diffuse_prob, surface_type, check_3):
+    """ This function is dedicated to generating both diffuse and specular. The important part here is that diffuse is a put out in a random direction, and that specular works like specular works. 
 
 
     Args:
@@ -405,28 +348,74 @@ def diffuse_and_specular(alive_new, living_indices, living, X1, Y1, Z1, dx, dy, 
         surface_type (_type_): _description_
     """
 
-    specular_cut = np.random.uniform(size = (len(alive_new),)) > diffuse_prob
+    """~~~~~~~~~~~~~~~~~~~~~~~~~~ In the future, I want a function here which allows me to generate this cutoff as a function of momentum and incident angle"""
+    specular_cut = np.random.uniform(size = (len(surface_type),)) > diffuse_prob
+    
     # ok now that we have the specular cut, let's generate two new things
     # first we should do specular, and get that out of the way. 
     # surface type should have a one-to-one mapping to alive_new, so
-    #we are either going to have an issue with size here, or in the next step, I'm not sure where because surface_type is never defined
-    print(np.shape(surface_type))
-    print(np.shape(specular_cut))
-    checkX = (surface_type[specular_cut] == "X")
-    checkY = (surface_type[specular_cut] == "Y")
     checkZ = (surface_type[specular_cut] == "Z")
     checkXY = (surface_type[specular_cut] == "XY")
     #this is the issue, we need to be applying the further cuts to living_indices, which is just so stupid in the way its coded, but let's just go with it. 
     # alive_new will just be alive, and we need to apply all the regular cuts to it.  
-    dx[living_indices[checkX]] = -1.*dx[living][checkX]  
-    dy[living_indices[checkY]] = -1.*dx[living][checkY] 
     dz[living_indices[checkZ]]  = -1.*dx[living][checkZ] 
     if len(dz[living][checkXY]) > 0:
         dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
+    #for now I'm including this for context
+    # we want to take diffuse, and just maintain everything except their direction, which is random. this is the same as just applying [~specular_cut] to dx, dy, dz and changing that
+    dx, dy, dz = generate_random_direction_off_surface(surface_type=surface_type[~specular_cut],dx =  dx, dy= dy,dz = dz, living_indices=living_indices)
+    return dx, dy, dz, #for now we just test to see if we can implement this instead below, and if it works for specular cuts. 
 
-    # now we can start to export these things.
-    # With this, I think that we can actually think about diffuse reflection now. I like this cut method honestly, though this will give an error I expect. 
-    return dx, dy, dz #for now we just test to see if we can implement this instead below, and if it works for specular cuts. 
+def generate_random_direction_off_surface(surface_type, dx, dy, dz, living_indices):
+    """Meant to take in a surface and generate a random direction relative to that. 
+
+    Args:
+        surface_type (_type_): _description_
+    """
+    #first we do the case where the surface is XY
+    checkXY = surface_type == 'XY'
+    phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(dx[living_indices[checkXY]])), np.random.uniform(-1., 1, size=len(dx[living_indices[checkXY]]))
+    offset_angles_1 = np.arctan2(dx[living_indices[checkXY]], dy[living_indices[checkXY]])
+    phi_1 += offset_angles_1
+    theta_1 = np.arccos(arctheta_1)
+    dx[living_indices[checkXY]] = np.cos( phi_1 ) * np.sin( theta_1 )
+    dy[living_indices[checkXY]]  = np.sin( phi_1 ) * np.sin( theta_1 )
+    dz[living_indices[checkXY]]  = np.cos(theta_1)
+
+    #Case where the surface is Z
+    checkZ = surface_type == 'Z'
+    phi_2, arctheta_2 = np.random.uniform(0, 2 * np.pi, size=len(dx[living_indices[checkZ]])), np.random.uniform(0, 1.0, size=len(dx[living_indices[checkZ]]))
+    theta_2 = np.arccos(arctheta_2)
+    dx[living_indices[checkZ]] = np.cos( phi_2 ) * np.sin( theta_2 )
+    dy[living_indices[checkZ]]  = np.sin( phi_2 ) * np.sin( theta_2 )
+    dz[living_indices[checkZ]]  = np.cos(theta_2)
+    return dx, dy, dz
+
+
+def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta):
+    """
+    This function generates a random direction for a large number of quasiparticles, where that random direction is within ranges. See arguments for details.
+    Phi is normally distributed from the two bounds, and theta is normally distributed across the inverse. 
+
+    Args:
+        nQPs (int): The number of quasiparticles being generated 
+        bottom_phi (Float): the bottom bound of the phi angle, which is the azimuthal angle. 
+        top_phi (float): the top bound of the phi angle, which is the azimuthal angle
+        bottom_theta (float): bottom bound of the inverse of theta, must be between (-1, 1)
+        top_theta (_type_): upper bound of the inverse of theta, must be between (-1, 1)
+
+    Returns:
+        tuple: the unit vector in cartesian coordinateds, broken up into arrays of X, Y, Z, each of length nQPs. 
+    """
+    phi, arctheta = np.random.uniform(bottom_phi, top_phi, size=nQPs), np.random.uniform(bottom_theta, top_theta, size=nQPs)
+    theta = np.arccos(arctheta)
+    #prepare the vecctors of direction
+    dx = np.cos( phi ) * np.sin( theta )
+    dy = np.sin( phi ) * np.sin( theta )
+    dz = np.cos(theta)
+    return dx, dy, dz
+
+
 
 
 
@@ -493,7 +482,7 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
     dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
     return dx, dy, dz
 
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diffuse_flag = False,  T=2., debug= False, plot_3d=False):
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diffuse_flag = False, diffuse_prob = 0.0, T=2., debug= False, plot_3d=False):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -523,42 +512,31 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
     #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
     #randomely assign the phi and theta directions, each with an array the size of the number of quasiparticles. 
-    phi, arctheta = np.random.uniform(0., 2.*np.pi, size=nQPs), np.random.uniform(-1., 1, size=nQPs)
-    theta = np.arccos(arctheta)
-    #prepare the vecctors of direction
-    dx = np.cos( phi ) * np.sin( theta )
-    dy = np.sin( phi ) * np.sin( theta )
-    dz = np.cos(theta)
+    # I almost feel like this should be a function, where we just input the range of these things
+    dx, dy, dz = generate_random_direction(nQPs, 0.0, 2 * np.pi, -1.0, 1.0)
+
     if debug: 
         dx =  np.full(shape=nQPs, fill_value=0.0)
         dy = np.full(shape=nQPs, fill_value=0.0)
         dz = np.full(shape=nQPs, fill_value=-1.0)
 
-    #dx, dy, dz = 0., 0., 1
-    #prepare time
     total_time = np.zeros(nQPs, dtype=float)
     n=0
-    #xs, ys, zs = [start[0]], [start[1]], [start[2]]
     #This draws from a k**2 distribution, essentially trying to follow the density of states
     momentum = Random_QPmomentum(nQPs) #keV/c
-    Eb = 0.00062
-    #prepare the alive condition. This is whether or not the qp is still moving, or we have lost it (down-converted, absorbed, etc.)
+    #prepare the alive tracker, and then cut out those which we can't sense
     alive = np.ones(nQPs, dtype=int)
-    #ok this is really stupid. So he's using booleans very loosely here, True = 1, False = 0. 
-    #the idea is that we are only seeing above the phonon range, which is incorrect
     cond = momentum <  1.1
     alive = np.where( cond, 0, alive)
-    #this spits out an error if you only look at phonon population... that's really weird. 
-    #It seems to be an issue with one of the checks.
 
     #velocity and energy, both arrays of length nQP
     velocity = QP_velocity(momentum) #m/s
     energy = QP_dispersion(momentum) #eV
-    #why do we set this condition at all? that makes no sense
     evaporated = np.zeros( nQPs, dtype=bool)
     
     deposits = np.zeros(nQPs, dtype=float)
     ids = np.full(nQPs, None)
+    bounced_flag = np.zeros_like(alive)
     #we prepare a boolean for evaporated, meaning that evaporated will be a mask that gets added to, then deposits is a float so idk what that is for, ids is for which cpd?
     #here we can also add the particle locations
     if plot_3d:
@@ -581,7 +559,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         living = ( alive > 0.5 )
         living_indices = np.where(living)[0]
         
-        #set the new X1, Y1, Z1 space to exclude any particles that have already made it through
+        bounced_flag[living]  = np.full_like(alive[living], fill_value=n)
+        #set the new X1, Y1, Z1 space to exclude any particles that did not make it to a wall 
         X1, Y1, Z1 = X1[cond], Y1[cond], Z1[cond]
         surface_type = surface_type[cond]
         
@@ -630,27 +609,12 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
             cond = (r > reflection_prob)
             #this section needs a lot of work, we need to adjust the way this works 
             alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
-            dx, dy, dz = diffuse_and_specular(alive, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=0.0)
+            dx, dy, dz = diffuse_and_specular(alive, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=0.0, check_3 = check3)
             
-            """#handle reflections
-            checkX = (surface_type == "X")
-            checkY = (surface_type == "Y")
-            checkZ = (surface_type == "Z")
-            checkXY = (surface_type == "XY")
-            
-            print(f'this is the nth iteration; length of checkX: {list(checkX).count(1)}, length of checkY: {list(checkY).count(1)}, length of checkZ: {list(checkZ).count(True)}, length of checkXY: {list(checkXY).count(True)}')
-            dx[living_indices[checkX]] = -1.*dx[living][checkX] 
-            dy[living_indices[checkY]] = -1.*dx[living][checkY] 
-            dz[living_indices[checkZ]] = -1.*dx[living][checkZ] 
-            
-            if len(dz[living][checkXY]) > 0:
-                dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
-                """
             
             X[living_indices[check3]] = X1[check3]
             Y[living_indices[check3]] = Y1[check3]
             Z[living_indices[check3]] = Z1[check3]
-            print(alive)
         #print(alive)
         if plot_3d: 
             try: 
@@ -660,9 +624,10 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
             except IndexError:
                 print('one reflection has gone on more than 20 times')
     if plot_3d:
+        print(f'this is the bounced flag {bounced_flag}')
         ax = plt.figure().add_subplot(projection ='3d')
         for i in range(nQPs):
-            ax.plot(particles_x[i,:], particles_y[i,:], particles_z[i,:], '-o', label = str(i))
+            ax.plot(particles_x[i,:], particles_y[i,:], particles_z[i,:], '-o', label = f'bounced {bounced_flag[i]} times')
         ax.set_xlim(-3.8, 3.8)
         ax.set_ylim(-3.8, 3.8)
         def walls(points, radius): 
@@ -681,7 +646,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         ax.legend()
         print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
     hit = (deposits > 0.)
-    return deposits[hit], total_time[hit], ids[hit] 
+    return deposits[hit], total_time[hit], ids[hit], bounced_flag[hit]
         
 def photon_propagation(nPhotons, start, conditions, reflection_prob):
         
@@ -843,6 +808,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     nCPDs = detector.get_nCPDs()
     nHitsPerCPD = [0]*nCPDs
     arrivalTimes = [[] for x in range(nCPDs)]
+    bounce_flag_with_cpd = [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
     #check to see if a map is loaded
     if useMap:
@@ -866,7 +832,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
         
-    hits, arrival_times, cpd_ids = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T, debug=debug, plot_3d = plot_3d)
+    hits, arrival_times, cpd_ids, bounced_flag = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T, diffuse_flag=True,diffuse_prob=detector.get_diffuse_prob() ,debug=debug, plot_3d = plot_3d)
     
     coincidence = 0
     for i in range(nCPDs):
@@ -878,8 +844,9 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
         noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=len(hits[cond]))
         chAreas[i] += np.sum(noise)
         arrivalTimes[i] = arrival_times[cond]
+        bounce_flag_with_cpd[i] = bounced_flag[cond]
 
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd)
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
