@@ -303,7 +303,7 @@ def find_surface_intersection(start, direction, conditions):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
         direction = np.array([np.array([p]) for p in direction])
-    t = np.array([np.linspace(0, 8, 250) for i in range(len(start[0]))])  # Parameter range for the line
+    t = np.array([np.linspace(0, 12, 300) for i in range(len(start[0]))])  # Parameter range for the line
     # Calculate the line coordinates
     x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
     y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
@@ -331,7 +331,9 @@ def find_surface_intersection(start, direction, conditions):
 
 
 def diffuse_and_specular(alive_new, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz,  diffuse_prob, surface_type, check_3):
-    """ This function is dedicated to generating both diffuse and specular. The important part here is that diffuse is a put out in a random direction, and that specular works like specular works. 
+    """ This funtion is dedicated to generating both diffuse and specular. The important part here is that diffuse is a put out in a random direction, and that specular works like specular works. 
+    I want to restructure this: I think ideally we have this function be something like 
+    arg: surface_type, *pos, *direction, diffuse_prob
 
 
     Args:
@@ -350,23 +352,34 @@ def diffuse_and_specular(alive_new, momentum, living_indices, living, X1, Y1, Z1
 
     """~~~~~~~~~~~~~~~~~~~~~~~~~~ In the future, I want a function here which allows me to generate this cutoff as a function of momentum and incident angle"""
     specular_cut = np.random.uniform(size = (len(surface_type),)) > diffuse_prob
+   
     
     # ok now that we have the specular cut, let's generate two new things
     # first we should do specular, and get that out of the way. 
     # surface type should have a one-to-one mapping to alive_new, so
-    checkZ = (surface_type[specular_cut] == "Z")
-    checkXY = (surface_type[specular_cut] == "XY")
+    checkZ = (surface_type == "Z")
+    checkXY = (surface_type == "XY")
+    check_liquid = (surface_type == 'Liquid')
     #this is the issue, we need to be applying the further cuts to living_indices, which is just so stupid in the way its coded, but let's just go with it. 
     # alive_new will just be alive, and we need to apply all the regular cuts to it.  
-    dz[living_indices[checkZ]]  = -1.*dx[living][checkZ] 
-    if len(dz[living][checkXY]) > 0:
-        dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
-    #for now I'm including this for context
+    # I want to write this more clearly.
+    alive_z_spec_mask = living_indices[checkZ & specular_cut]
+    alive_xy_spec_mask = living_indices[checkXY & specular_cut]
+    alive_liquid_spec_mask = living_indices[check_liquid & specular_cut]
+    print('error must be in dz[]')
+
+    print(list(alive_liquid_spec_mask).count(True))
+    dz[alive_z_spec_mask]  = -1.*dz[alive_z_spec_mask] 
+    dz[alive_liquid_spec_mask] = -1. * dz[alive_liquid_spec_mask]
+    if len(dz[alive_xy_spec_mask]) > 0:
+        dx[alive_xy_spec_mask], dy[alive_xy_spec_mask], dz[alive_xy_spec_mask] = np.vectorize(wall_reflect)(X1[checkXY & specular_cut], Y1[checkXY & specular_cut], dx[alive_xy_spec_mask], dy[alive_xy_spec_mask], dz[alive_xy_spec_mask] ) 
+    
     # we want to take diffuse, and just maintain everything except their direction, which is random. this is the same as just applying [~specular_cut] to dx, dy, dz and changing that
-    dx, dy, dz = generate_random_direction_off_surface(surface_type=surface_type[~specular_cut],dx =  dx, dy= dy,dz = dz, living_indices=living_indices)
+
+    dx, dy, dz = generate_random_direction_off_surface(surface_type=surface_type,specular = specular_cut, dx =  dx, dy= dy,dz = dz, living_indices=living_indices)
     return dx, dy, dz, #for now we just test to see if we can implement this instead below, and if it works for specular cuts. 
 
-def generate_random_direction_off_surface(surface_type, dx, dy, dz, living_indices):
+def generate_random_direction_off_surface(surface_type, specular,  dx, dy, dz, living_indices):
     """Meant to take in a surface and generate a random direction relative to that. 
 
     Args:
@@ -374,21 +387,23 @@ def generate_random_direction_off_surface(surface_type, dx, dy, dz, living_indic
     """
     #first we do the case where the surface is XY
     checkXY = surface_type == 'XY'
-    phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(dx[living_indices[checkXY]])), np.random.uniform(-1., 1, size=len(dx[living_indices[checkXY]]))
-    offset_angles_1 = np.arctan2(dx[living_indices[checkXY]], dy[living_indices[checkXY]])
+    alive_XY_diff_mask = living_indices[checkXY & ~specular]
+    phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(dx[alive_XY_diff_mask])), np.random.uniform(-1., 1, size=len(dx[alive_XY_diff_mask]))
+    offset_angles_1 = np.arctan2(dx[alive_XY_diff_mask], dy[alive_XY_diff_mask])
     phi_1 += offset_angles_1
     theta_1 = np.arccos(arctheta_1)
-    dx[living_indices[checkXY]] = np.cos( phi_1 ) * np.sin( theta_1 )
-    dy[living_indices[checkXY]]  = np.sin( phi_1 ) * np.sin( theta_1 )
-    dz[living_indices[checkXY]]  = np.cos(theta_1)
+    dx[alive_XY_diff_mask] = np.cos( phi_1 ) * np.sin( theta_1 )
+    dy[alive_XY_diff_mask]  = np.sin( phi_1 ) * np.sin( theta_1 )
+    dz[alive_XY_diff_mask]  = np.cos(theta_1)
 
     #Case where the surface is Z
     checkZ = surface_type == 'Z'
-    phi_2, arctheta_2 = np.random.uniform(0, 2 * np.pi, size=len(dx[living_indices[checkZ]])), np.random.uniform(0, 1.0, size=len(dx[living_indices[checkZ]]))
+    alive_Z_diff_mask = living_indices[checkZ & ~specular]
+    phi_2, arctheta_2 = np.random.uniform(0, 2 * np.pi, size=len(dx[alive_Z_diff_mask])), np.random.uniform(0, 1.0, size=len(dx[alive_Z_diff_mask]))
     theta_2 = np.arccos(arctheta_2)
-    dx[living_indices[checkZ]] = np.cos( phi_2 ) * np.sin( theta_2 )
-    dy[living_indices[checkZ]]  = np.sin( phi_2 ) * np.sin( theta_2 )
-    dz[living_indices[checkZ]]  = np.cos(theta_2)
+    dx[alive_Z_diff_mask] = np.cos( phi_2 ) * np.sin( theta_2 )
+    dy[alive_Z_diff_mask]  = np.sin( phi_2 ) * np.sin( theta_2 )
+    dz[alive_Z_diff_mask]  = np.cos(theta_2)
     return dx, dy, dz
 
 
@@ -433,27 +448,32 @@ def evaporation(momentum, energy, velocity, direction):
     c = 2.998e8 #m/s
     Eb = 0.00062
 
-    
+    # Going to revamp a lot of this, but it seems that most of it is pulled from adams thesis.
     theta = np.arccos(direction[2]) #radians
     #sin_critical_angle = np.sqrt( 2*(energy-0.00062)/(4.002603254e9) )/(np.abs(velocity)/3e8)
     sin_critical_angle = np.sqrt(2.*mass*(energy - Eb))/momentum/1000. #Eq 2.19 from J. Adams thesis
     
     crit_angle = np.arcsin( sin_critical_angle ) #radians
     
-    Velocity_He_atom=np.sqrt( 2.*(energy-Eb)/(mass) )*c
+    # there should be an hbar in here to make the right units I believe
+    Velocity_He_atom=np.sqrt( 2.*(energy-Eb)/(mass) )*c #~~~~~~~~~~~ This seems wrong, has the wrong units. Is it possible we are truncating? 
 
+    # So we make the incident angles, and find the reflected angle. After this, we prepare for various conditions where we cover our bases.
     sin_theta_R = (velocity/c)*np.sin((theta))/np.sqrt( 2*(energy-Eb)/(mass) ) #Eq 2.18 from Adams thesis (q = mv/hbar*c)
     theta_R = np.arcsin(sin_theta_R)
+    # Finding new Vz
     new_Vz=Velocity_He_atom*np.cos(theta_R)
+    # ~~~~~~~~~~~ when V_y is 0. there is a lot of inverse tan stuff here, I feel like angles aren't the best way to deal with this..
     cond = (direction[1] == 0.)
     tan = np.where( cond, np.pi/2., np.arctan(np.abs(direction[0]/direction[1]) ))
     new_Vy = np.where( cond, 0., direction[1]/np.abs(direction[1])*Velocity_He_atom*np.sin(theta_R)*np.sin((tan)) )
     
+    # ~~~~~~~~~~ when V_x = 0
     cond = (direction[0] == 0.)
     new_Vx = np.where( cond, 0., direction[0]/np.abs(direction[0])*Velocity_He_atom*np.sin(theta_R)*np.cos((tan)))
 
     magnitude=np.sqrt(new_Vx*new_Vx+new_Vy*new_Vy+new_Vz*new_Vz)
-    
+
     cond = (velocity <= 0) | (sin_critical_angle > 1.) | (theta > crit_angle) | ( energy < Eb )
     energy = np.where( cond, 0., energy - Eb)
   
@@ -505,9 +525,9 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
 
     #if the plot3d is true, then we want to record the path traveled. This means, for each particle, recording it's starting and ending point. Sadly, this also means lists. 
     if plot_3d:
-        particles_x = np.zeros(shape=(nQPs, 20))
-        particles_y = np.zeros(shape=(nQPs, 20))
-        particles_z =  np.zeros(shape=(nQPs, 20))
+        particles_x = np.zeros(shape=(nQPs, 40))
+        particles_y = np.zeros(shape=(nQPs, 40))
+        particles_z =  np.zeros(shape=(nQPs, 40))
  
     #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
@@ -518,7 +538,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
     if debug: 
         dx =  np.full(shape=nQPs, fill_value=0.0)
         dy = np.full(shape=nQPs, fill_value=0.0)
-        dz = np.full(shape=nQPs, fill_value=-1.0)
+        dz = np.full(shape=nQPs, fill_value=1.0)
 
     total_time = np.zeros(nQPs, dtype=float)
     n=0
@@ -572,31 +592,45 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         
         #checking if it hit the surface of the liquid helium
         if len(surface_type[check1]) > 0:
-            #this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
-            evap, velocity[living_indices[check1]], dx[living_indices[check1]], dy[living_indices[check1]], dz[living_indices[check1]] = evaporation(momentum[living][check1], energy[living][check1], velocity[living][check1], [dx[living][check1], dy[living][check1], dz[living][check1]])
-            #print("Evap", sum(evap))
-            cond = (evap < 0.5) | (np.random.random(len(evap)) > evap_eff ) #check if evaporation was successful
-            alive[living_indices[check1]] = np.where(cond, 0, alive[living_indices[check1]]) #kill off QPs that didn't evaporate
-            evaporated[living_indices[check1]] = np.where( cond, evaporated[living_indices[check1]], True )
-            #ok so we just add 0.1 to Z1 to make sure it is in a new box. 
-            X[living_indices[check1]] = X1[check1]
-            Y[living_indices[check1]] = Y1[check1]
-            #this is bugged a little, the direction that comes from evaporation seems to be wrong.
-            #I've looked into this more now, I'm not actually sure this is bugged. 
-            Z[living_indices[check1]] = Z1[check1]+0.1
+            # cut to discuss only the living qps that hit the surface of the helium
+            alive_surface_check = living_indices[check1]
+            # ~~~~~~~~~~~~~ this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
+            evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
+            no_evap = (evap < 0.5) | (np.random.random(len(evap)) > evap_eff ) #Determintes success of evaporation by random cutoff, and kinematics.
+
+            # Calculate reflections for the ones that don't evaporate. 
+            dx, dy, dz = diffuse_and_specular(alive, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=0.0, check_3 ='non' )
+
+            evaporated[alive_surface_check] = np.where( no_evap, evaporated[alive_surface_check], True )
+            # ~~~~~~~~~~ If the QP doesn't evaporate, leave it where it is
+            X[alive_surface_check][no_evap] = X1[check1][no_evap]
+            Y[alive_surface_check][no_evap] = Y1[check1][no_evap]
+            Z[alive_surface_check][no_evap] = Z1[check1][no_evap]
+
+            # ~~~~~~~~~~ If the QP evaporates, move it up above the liquid surface 
+            X[alive_surface_check][~no_evap] = X1[check1][~no_evap]
+            Y[alive_surface_check][~no_evap] = Y1[check1][~no_evap]
+            Z[alive_surface_check][~no_evap] = Z1[check1][~no_evap] + 0.1
+
+       
+            
                                             
         check2 = np.array(["CPD" in str(s) for s in surface_type])
         #print("Hit %i CPDs" % len(surface_type[check2]))
-        if len(surface_type[check2]) > 0:
+        if list(check2).count(True)> 0:
             cpd_id = np.vectorize(extract_number)(surface_type[check2])
             cond = (evaporated[living][check2])
             #print("nDeps", len(deposits[living_indices[check2]][cond]))
             deposits[living_indices[check2]] = np.where( cond, energy[living_indices[check2]], deposits[living_indices[check2]])
             #going to store the CPD intersection point here for plotting purposes. 
             if plot_3d: 
-                particles_x[n,:][living_indices[check2]] = X1[check2]
-                particles_y[n,:][living_indices[check2]] = Y1[check2]
-                particles_z[n,:][living_indices[check2]] = Z1[check2]
+                try: 
+                    print(X1[check2])
+                    particles_x[n,:][living_indices[check2]] = X1[check2]
+                    particles_y[n,:][living_indices[check2]] = Y1[check2]
+                    particles_z[n,:][living_indices[check2]] = Z1[check2]
+                except IndexError:
+                    print('at least one reflection have gone on more than 20 times')        
             #now we set them to 0. 
             alive[living_indices[check2]] = np.zeros(len(alive[living_indices[check2]]), dtype=int) #kill off QPs, they've hit a CPD
             ids[living_indices[check2]] = np.where( cond, cpd_id, None ) #store the CPD IDs for evaporated QPs that hit a CPD
@@ -609,7 +643,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
             cond = (r > reflection_prob)
             #this section needs a lot of work, we need to adjust the way this works 
             alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
-            dx, dy, dz = diffuse_and_specular(alive, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=0.0, check_3 = check3)
+            dx, dy, dz = diffuse_and_specular(alive, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=diffuse_prob, check_3 = check3)
             
             
             X[living_indices[check3]] = X1[check3]
@@ -643,7 +677,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         ax.plot_surface(xx, yy, z * 2.75, alpha = 0.2,  label = 'Liquid Surface')
         z_cpd = z * 3.3
         ax.plot_surface(xx, yy, z_cpd, alpha = 0.2, label = 'CPD Level' )
-        ax.legend()
+
+        # ax.legend()
         print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
     hit = (deposits > 0.)
     return deposits[hit], total_time[hit], ids[hit], bounced_flag[hit]
