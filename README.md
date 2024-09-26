@@ -48,3 +48,25 @@ will submit one 2D map-making job for each z-bin. You can then use the script `M
 
 If you need help or have suggestions, reach out to me, Greg Rischbieter via slack or at rischbie@umich.edu
 
+
+## Operation
+
+So currently, I'm focusing purely on the quasiparticle modeling, as this is the most important area of development, and the most interesting physics that we can get from this sim. 
+
+The question is how does this whole thing work: Everything is an array. Each particle exists as an index at every array. alive: determines whether or not the particle is alive (1 if it is, 0 if it is dead). 
+X, Y, Z: position
+X1, Y1, Z1: Position of intersection with wall. You can think of the sim as constantly calculating intersections with walls, so we always need a starting and ending location. 
+
+dx, dy, dz: These are the direction vectors. 
+
+Velocity: velocity, momentum: momentum, energy: energy. 
+
+Everything is one-to-one. 
+
+living_indices: the _indices_ of each living particle. 
+
+
+### Theory of Operation
+
+Each particle has all of it's attributes in this chain of arrays, all of which are connected via this 1-1 nature. 
+We let the sim run until the sum of the alive array is 0, meaning that all quasiparticles are dead. 

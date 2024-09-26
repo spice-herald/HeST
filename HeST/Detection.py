@@ -327,84 +327,86 @@ def find_surface_intersection(start, direction, conditions):
         coords[2] = np.where(cond, z_line[np.arange(z_line.shape[0]), first_ints-1], coords[2])
         surface_type = np.where( cond, surface, surface_type )
         
-    return coords[0], coords[1], coords[2], surface_type
+    return np.array(coords[0], dtype = float), np.array(coords[1], dtype = float), np.array(coords[2], dtype= float), surface_type
 
 
-def diffuse_and_specular(alive_new, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz,  diffuse_prob, surface_type, check_3):
-    """ This funtion is dedicated to generating both diffuse and specular. The important part here is that diffuse is a put out in a random direction, and that specular works like specular works. 
-    I want to restructure this: I think ideally we have this function be something like 
-    arg: surface_type, *pos, *direction, diffuse_prob
+def diffuse_and_specular(surface, pos, direction, diffuse_prob):
+    """To calculate the diffuse and specular reflections. You specify a surface, and it works directly off the cases presented there. 
 
 
     Args:
-        alive_new (_type_): _description_
-        living_indices (_type_): _description_
-        living (_type_): _description_
-        X1 (_type_): _description_
-        Y1 (_type_): _description_
-        Z1 (_type_): _description_
-        dx (_type_): _description_
-        dy (_type_): _description_
-        dz (_type_): _description_
+        surface (_type_): _description_
+        pos (_type_): _description_
+        direction (_type_): _description_
         diffuse_prob (_type_): _description_
-        surface_type (_type_): _description_
+
+    Returns:
+        _type_: _description_
     """
+    x = pos[0]
+    y = pos[1]
+    z = pos[2]
+    dx = direction[0]  
+    dy = direction[1]
+    dz = direction[2]
 
-    """~~~~~~~~~~~~~~~~~~~~~~~~~~ In the future, I want a function here which allows me to generate this cutoff as a function of momentum and incident angle"""
-    specular_cut = np.random.uniform(size = (len(surface_type),)) > diffuse_prob
-   
-    
-    # ok now that we have the specular cut, let's generate two new things
-    # first we should do specular, and get that out of the way. 
-    # surface type should have a one-to-one mapping to alive_new, so
-    checkZ = (surface_type == "Z")
-    checkXY = (surface_type == "XY")
-    check_liquid = (surface_type == 'Liquid')
-    #this is the issue, we need to be applying the further cuts to living_indices, which is just so stupid in the way its coded, but let's just go with it. 
-    # alive_new will just be alive, and we need to apply all the regular cuts to it.  
-    # I want to write this more clearly.
-    alive_z_spec_mask = living_indices[checkZ & specular_cut]
-    alive_xy_spec_mask = living_indices[checkXY & specular_cut]
-    alive_liquid_spec_mask = living_indices[check_liquid & specular_cut]
-    print('error must be in dz[]')
+    if surface == 'Liquid':
+        #We will only do specular off surface.
+        dz = -dz
+        return dx, dy, dz
 
-    print(list(alive_liquid_spec_mask).count(True))
-    dz[alive_z_spec_mask]  = -1.*dz[alive_z_spec_mask] 
-    dz[alive_liquid_spec_mask] = -1. * dz[alive_liquid_spec_mask]
-    if len(dz[alive_xy_spec_mask]) > 0:
-        dx[alive_xy_spec_mask], dy[alive_xy_spec_mask], dz[alive_xy_spec_mask] = np.vectorize(wall_reflect)(X1[checkXY & specular_cut], Y1[checkXY & specular_cut], dx[alive_xy_spec_mask], dy[alive_xy_spec_mask], dz[alive_xy_spec_mask] ) 
-    
-    # we want to take diffuse, and just maintain everything except their direction, which is random. this is the same as just applying [~specular_cut] to dx, dy, dz and changing that
 
-    dx, dy, dz = generate_random_direction_off_surface(surface_type=surface_type,specular = specular_cut, dx =  dx, dy= dy,dz = dz, living_indices=living_indices)
-    return dx, dy, dz, #for now we just test to see if we can implement this instead below, and if it works for specular cuts. 
+    if surface == 'XY':
+        #we will do both specular and diffuse here. 
+        specular_cut = np.random.uniform(size = (len(dx),)) > diffuse_prob
+        if len(dx)> 0:
+            dx[specular_cut], dy[specular_cut], dz[specular_cut] = np.vectorize(wall_reflect)(x[specular_cut], y[specular_cut], z[specular_cut], dy[specular_cut], dz[specular_cut]) 
+            dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = generate_random_direction_off_surface(surface='XY',pos = (x[~specular_cut], y[~specular_cut], z[~specular_cut])) 
+            return dx, dy, dz
+    if surface == 'Z':
+        # we will do both specular and diffuse
+        specular_cut = np.random.uniform(size = (len(direction[0]),)) > diffuse_prob
+        dz[specular_cut] = - dz[specular_cut]
 
-def generate_random_direction_off_surface(surface_type, specular,  dx, dy, dz, living_indices):
+        dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = generate_random_direction_off_surface('Z', pos = (dx[~specular_cut], dy[~specular_cut], dx[~specular_cut]))
+
+        return dx, dy, dz
+
+        
+
+
+def generate_random_direction_off_surface(surface, pos = (0.0,0.0,0.0)):
     """Meant to take in a surface and generate a random direction relative to that. 
-
+    I want to make this function more case by case too. `
     Args:
         surface_type (_type_): _description_
     """
     #first we do the case where the surface is XY
-    checkXY = surface_type == 'XY'
-    alive_XY_diff_mask = living_indices[checkXY & ~specular]
-    phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(dx[alive_XY_diff_mask])), np.random.uniform(-1., 1, size=len(dx[alive_XY_diff_mask]))
-    offset_angles_1 = np.arctan2(dx[alive_XY_diff_mask], dy[alive_XY_diff_mask])
-    phi_1 += offset_angles_1
-    theta_1 = np.arccos(arctheta_1)
-    dx[alive_XY_diff_mask] = np.cos( phi_1 ) * np.sin( theta_1 )
-    dy[alive_XY_diff_mask]  = np.sin( phi_1 ) * np.sin( theta_1 )
-    dz[alive_XY_diff_mask]  = np.cos(theta_1)
+    x = pos[0]
+    print(x)
+    y = pos[1]
+    z = pos[2]
+    if surface == 'XY':
+        # ~~~~~~~~~~~ Doing this case by case, dx, dy, dz should already be cut to be alive and diffuse, and at an 'XY' surface
+        phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(x)), np.random.uniform(-1., 1, size=len(x))
+        offset_angles_1 = np.arctan2(x, y)
+        phi_1 += offset_angles_1
+        theta_1 = np.arccos(arctheta_1)
+        dx = np.cos( phi_1 ) * np.sin( theta_1 )
+        dy  = np.sin( phi_1 ) * np.sin( theta_1 )
+        dz  = np.cos(theta_1)
+        return dx, dy, dz
 
-    #Case where the surface is Z
-    checkZ = surface_type == 'Z'
-    alive_Z_diff_mask = living_indices[checkZ & ~specular]
-    phi_2, arctheta_2 = np.random.uniform(0, 2 * np.pi, size=len(dx[alive_Z_diff_mask])), np.random.uniform(0, 1.0, size=len(dx[alive_Z_diff_mask]))
-    theta_2 = np.arccos(arctheta_2)
-    dx[alive_Z_diff_mask] = np.cos( phi_2 ) * np.sin( theta_2 )
-    dy[alive_Z_diff_mask]  = np.sin( phi_2 ) * np.sin( theta_2 )
-    dz[alive_Z_diff_mask]  = np.cos(theta_2)
-    return dx, dy, dz
+
+    if surface == 'Z':
+        # ~~~~~~~~~ This should where dx, dy, dz and X, Y, Z have already been cut to be ALIVE, DIFFUSE, and at a 'Z' surface
+        phi_2, arctheta_2 = np.random.uniform(0, 2 * np.pi, size=len(x)), np.random.uniform(0, 1.0, size=len(x))
+        theta_2 = np.arccos(arctheta_2)
+        dx = np.cos( phi_2 ) * np.sin( theta_2 )
+        dy  = np.sin( phi_2 ) * np.sin( theta_2 )
+        dz  = np.cos(theta_2)
+        return dx, dy, dz
+
 
 
 def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta):
@@ -481,8 +483,8 @@ def evaporation(momentum, energy, velocity, direction):
     new_Vx = np.where( cond, 0., new_Vx/magnitude )
     new_Vy = np.where( cond, 0., new_Vy/magnitude )
     new_Vz = np.where( cond, 0., new_Vz/magnitude )
-    
     return np.where(cond, 0, 1), Velocity_He_atom, new_Vx, new_Vy, new_Vz
+
 
 # Define a function to extract the CPD number using regex
 def extract_number(s):
@@ -533,7 +535,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
     X, Y, Z = start[0], start[1], start[2]
     #randomely assign the phi and theta directions, each with an array the size of the number of quasiparticles. 
     # I almost feel like this should be a function, where we just input the range of these things
-    dx, dy, dz = generate_random_direction(nQPs, 0.0, 2 * np.pi, -1.0, 1.0)
+    dx, dy, dz = generate_random_direction(nQPs, 0.0, 2.0 * np.pi, -1.0, 1.0)
 
     if debug: 
         dx =  np.full(shape=nQPs, fill_value=0.0)
@@ -570,42 +572,55 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         living = ( alive > 0.5 )
         #print(Z[living])
         #find a surface intersection
-        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X[living], Y[living], Z[living]]), np.array([dx[living], dy[living], dz[living]]), conditions)
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), conditions)
         #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
-        cond = (surface_type != None)
+        hit_surface_check= (surface_type != None)
+        print(list(hit_surface_check).count(False))
+        # we are just setting these things to 0. Hopefully this doesn't destroy our efficiency
+        X[~hit_surface_check], Y[~hit_surface_check], Z[~hit_surface_check] = np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check])   
+        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
+        
+
         #eliminate (from the living) the values that have escaped without intersecting a surface (which should be none for this geometry)
-        alive[living] = np.where( cond, alive[living], 0)
+        alive = np.where(hit_surface_check, alive, 0)
         #reset the living parameter and indices
         living = ( alive > 0.5 )
         living_indices = np.where(living)[0]
-        
+        # ~~~~~~~~~~~~~ To maintain the surface length is the right size
+        # surface_type = surface_type[hit_surface_check]
+        # print(len(living_indices) == len(surface_type))
+        # print(len(living_indices))
+        # print(len(surface_type))
+        # print(np.shape(living))
         bounced_flag[living]  = np.full_like(alive[living], fill_value=n)
         #set the new X1, Y1, Z1 space to exclude any particles that did not make it to a wall 
-        X1, Y1, Z1 = X1[cond], Y1[cond], Z1[cond]
-        surface_type = surface_type[cond]
         
         #finding the time it took to go from initial point to intersection point
-        dist_sq = (pow(X1-X[living],2.)+pow(Y1-Y[living], 2.)+pow(Z1-Z[living],2.)).astype(float)      
-        total_time[living] = total_time[living] + np.sqrt(dist_sq)/(velocity[living]*1.0e-4)  #us
+        dist_sq = (pow(X1[living_indices]-X[living_indices],2.)+pow(Y1[living_indices]-Y[living_indices], 2.)+pow(Z1[living_indices]-Z[living_indices],2.)).astype(float)      
+        total_time[living_indices] = total_time[living_indices] + np.sqrt(dist_sq)/(velocity[living_indices]*1.0e-4)  #us
         
-        check1 = ( surface_type == "Liquid")
+        check1 = (surface_type == "Liquid")
         
         #checking if it hit the surface of the liquid helium
         if len(surface_type[check1]) > 0:
             # cut to discuss only the living qps that hit the surface of the helium
-            alive_surface_check = living_indices[check1]
+            alive_surface_check = living & check1
+            print(np.shape(alive_surface_check))
             # ~~~~~~~~~~~~~ this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
             evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
             no_evap = (evap < 0.5) | (np.random.random(len(evap)) > evap_eff ) #Determintes success of evaporation by random cutoff, and kinematics.
+            print(len(no_evap) == len(alive_surface_check))
+            print(len(no_evap) == list(alive_surface_check).count(True))
+            # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
+            a_L_noevap = alive_surface_check[no_evap] # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
+            dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap] = diffuse_and_specular('Liquid', (X[a_L_noevap], Y[a_L_noevap], Z[a_L_noevap]), (dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap]), diffuse_prob=0.0)
 
-            # Calculate reflections for the ones that don't evaporate. 
-            dx, dy, dz = diffuse_and_specular(alive, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=0.0, check_3 ='non' )
 
             evaporated[alive_surface_check] = np.where( no_evap, evaporated[alive_surface_check], True )
             # ~~~~~~~~~~ If the QP doesn't evaporate, leave it where it is
             X[alive_surface_check][no_evap] = X1[check1][no_evap]
             Y[alive_surface_check][no_evap] = Y1[check1][no_evap]
-            Z[alive_surface_check][no_evap] = Z1[check1][no_evap]
+            Z[alive_surface_check][no_evap] = Z1[check1][no_evap] - 0.1
 
             # ~~~~~~~~~~ If the QP evaporates, move it up above the liquid surface 
             X[alive_surface_check][~no_evap] = X1[check1][~no_evap]
@@ -637,15 +652,24 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
             
         check3 = (check1 == False) & (check2 == False) #doesn't reach liquid or CPD
         if len(surface_type[check3]) > 0:
-            #if diffuse_flag:
-                #here we can make two cuts. one for specular and one for not. Then everything is the same beyond that.    
+            # Let's simplify this
+            XY_check = (surface_type == 'XY')
+            Z_check = (surface_type == 'Z')
+            a_xy_check = living_indices[check3 & XY_check] 
+            a_z_check = living_indices[check3 & Z_check]
             r = np.random.random(len(surface_type[check3]))
             cond = (r > reflection_prob)
-            #this section needs a lot of work, we need to adjust the way this works 
-            alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
-            dx, dy, dz = diffuse_and_specular(alive, momentum, living_indices, living, X1, Y1, Z1, dx, dy, dz, surface_type=surface_type, diffuse_prob=diffuse_prob, check_3 = check3)
-            
-            
+            alive[living_indices[check3]] = np.where(cond, 0, alive[check3]) #kill of those that don't reflect
+            # ~~~~~~~~~~~ First do case of reflection off XY.
+            if list(a_xy_check).count(True) > 0:
+                dx, dy, dz = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
+                                                direction = (dx[a_xy_check], dy[a_xy_check], dz[a_xy_check]), 
+                                                diffuse_prob=diffuse_prob)
+            # ~~~~~~~~~~~ Reflection off Z
+            if list(a_z_check).count(True) > 0:
+                dx, dy, dz = diffuse_and_specular('Z', pos = (X1[a_z_check],Y1[a_z_check],Z1[a_z_check]), 
+                                                direction = (dx[a_z_check], dy[a_z_check], dz[a_z_check]), 
+                                                diffuse_prob=diffuse_prob)           
             X[living_indices[check3]] = X1[check3]
             Y[living_indices[check3]] = Y1[check3]
             Z[living_indices[check3]] = Z1[check3]
