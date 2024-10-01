@@ -308,15 +308,18 @@ def find_surface_intersection(start, direction, conditions):
     x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
     y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
     z_line = start[2][:, np.newaxis] + t * direction[2][:, np.newaxis]
+    print(x_line)
 
+    
     dist = np.ones(len(start[0]))*9999.
     coords = [np.full(len(start[0]), None), np.full(len(start[0]), None), np.full(len(start[0]), None)]
     surface_type = np.full(len(start[0]), None)
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
+        print(cut, surface)
         first_ints = np.array([np.argmax(~cut[i]) for i in range(len(cut))])
         #if first_int == 0:
-        #    continue
+        # continue
         d = t[np.arange(t.shape[0]), first_ints]
         cond = ( d < dist ) & (first_ints > 0)
         dist = np.where(cond, d, dist)        
@@ -359,10 +362,10 @@ def diffuse_and_specular(surface, pos, direction, diffuse_prob):
     if surface == 'XY':
         #we will do both specular and diffuse here. 
         specular_cut = np.random.uniform(size = (len(dx),)) > diffuse_prob
-        if len(dx)> 0:
-            dx[specular_cut], dy[specular_cut], dz[specular_cut] = np.vectorize(wall_reflect)(x[specular_cut], y[specular_cut], z[specular_cut], dy[specular_cut], dz[specular_cut]) 
-            dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = generate_random_direction_off_surface(surface='XY',pos = (x[~specular_cut], y[~specular_cut], z[~specular_cut])) 
-            return dx, dy, dz
+        if list(specular_cut).count(True)> 0:
+            dx[specular_cut], dy[specular_cut], dz[specular_cut] = np.vectorize(wall_reflect)(x[specular_cut], y[specular_cut], dx[specular_cut], dy[specular_cut], dz[specular_cut]) 
+        dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = generate_random_direction_off_surface(surface='XY',pos = (x[~specular_cut], y[~specular_cut], z[~specular_cut])) 
+        return dx, dy, dz
     if surface == 'Z':
         # we will do both specular and diffuse
         specular_cut = np.random.uniform(size = (len(direction[0]),)) > diffuse_prob
@@ -383,7 +386,6 @@ def generate_random_direction_off_surface(surface, pos = (0.0,0.0,0.0)):
     """
     #first we do the case where the surface is XY
     x = pos[0]
-    print(x)
     y = pos[1]
     z = pos[2]
     if surface == 'XY':
@@ -436,7 +438,7 @@ def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta
 
 
 
-
+"""
 def evaporation(momentum, energy, velocity, direction):
     if np.isscalar(momentum):
         momentum = np.array([momentum])
@@ -483,15 +485,64 @@ def evaporation(momentum, energy, velocity, direction):
     new_Vx = np.where( cond, 0., new_Vx/magnitude )
     new_Vy = np.where( cond, 0., new_Vy/magnitude )
     new_Vz = np.where( cond, 0., new_Vz/magnitude )
-    return np.where(cond, 0, 1), Velocity_He_atom, new_Vx, new_Vy, new_Vz
+    return np.where(cond, 0, 1), Velocity_He_atom, new_Vx, new_Vy, new_Vz"""
+
+def evaporation(momentum, energy, velocity, direction):
+    """Calculate the kinematics of a particle, after evaporation. This means that every argument here
+    is assumed to be only the ones that have already evaporated. 
+
+    Args:
+        momentum (array): 
+        energy (array): _description_
+        velocity (array): _description_
+        direction (array): _description_
+    """
+    dx, dy, dz = direction[0], direction[1], direction[2]
+    if np.isscalar(momentum):
+        momentum = np.array([momentum])
+    if np.isscalar(energy):
+        energy = np.array([energy])
+    if np.isscalar(velocity):
+        velocity = np.array([velocity])
+
+    m =  3.725472e6 #He mass in keV/c^2
+    pxi, pyi, pzi = momentum * dx, momentum * dy, momentum * dz
+    pxf, pyf =pxi, pyi
+    pzf = np.sqrt(2 * m * energy - pxi**2 - pyi**2)
+    momentum = np.sqrt(pxf**2 + pyf**2 + pzf**2)
+    dx, dy, dz = pxf/momentum, pyf/momentum, pzf/momentum
+    # once again, just a reminder that these should only be for the QP element after evaporation
+    return dx, dy, dz, momentum
+
+def evap_prob_of_p_theta(p, theta):
+    # For now, we are just going to do a uniform distribution, but this is to build this later
+    return np.random.uniform(size = len(theta))
+
+    
+
+def critical_angle(Energy, momentum, binding_energy = 0.00062):
+    m =  3.725472e9 #He mass in eV/c^2
+    c = 2.998e8
+    return np.arcsin(2 * m * np.sqrt(Energy - binding_energy)/momentum)
 
 
 # Define a function to extract the CPD number using regex
+# @np.vectorize(otypes=[str])
+# def extract_number(s):
+#     match = re.search(r'\d+', s)  # Find the first occurrence of one or more digits
+#     if match:
+#         return int(match.group())  # Convert the matched digits to an integer
+#     return None  # Return None if no digits are found
+
+@np.vectorize(otypes=[str])
 def extract_number(s):
-    match = re.search(r'\d+', s)  # Find the first occurrence of one or more digits
-    if match:
-        return int(match.group())  # Convert the matched digits to an integer
-    return None  # Return None if no digits are found
+    s_list = list(s)
+    try:
+        s_list[-1] = int(s_list[-1])
+    except ValueError:
+        print('The last element of the list was not a number')
+        return None
+    return s_list[-1]
 
 # Define a function to handle reflections off of walls
 def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
@@ -503,6 +554,7 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
     reflected_vector = incident_vector - 2. * np.dot(incident_vector, normal_vector) * normal_vector
     dx, dy, dz = reflected_vector / np.linalg.norm(reflected_vector)
     return dx, dy, dz
+
 
 def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diffuse_flag = False, diffuse_prob = 0.0, T=2., debug= False, plot_3d=False):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
@@ -529,7 +581,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
     if plot_3d:
         particles_x = np.zeros(shape=(nQPs, 40))
         particles_y = np.zeros(shape=(nQPs, 40))
-        particles_z =  np.zeros(shape=(nQPs, 40))
+        particles_z = np.zeros(shape=(nQPs, 40))
  
     #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
@@ -575,7 +627,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), conditions)
         #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
         hit_surface_check= (surface_type != None)
-        print(list(hit_surface_check).count(False))
+        # print(list(hit_surface_check).count(False))
         # we are just setting these things to 0. Hopefully this doesn't destroy our efficiency
         X[~hit_surface_check], Y[~hit_surface_check], Z[~hit_surface_check] = np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check])   
         dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
@@ -603,89 +655,113 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         
         #checking if it hit the surface of the liquid helium
         if len(surface_type[check1]) > 0:
+            print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Evaporations ~~~~~~~~~~~~~~~~~~~~')
             # cut to discuss only the living qps that hit the surface of the helium
             alive_surface_check = living & check1
-            print(np.shape(alive_surface_check))
+            # print(np.shape(alive_surface_check))
             # ~~~~~~~~~~~~~ this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
-            evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
-            no_evap = (evap < 0.5) | (np.random.random(len(evap)) > evap_eff ) #Determintes success of evaporation by random cutoff, and kinematics.
-            print(len(no_evap) == len(alive_surface_check))
-            print(len(no_evap) == list(alive_surface_check).count(True))
+            # evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
+            # calc critical angle
+            critical_angles = critical_angle(energy, momentum) 
+            incident_angles = np.arccos(dz)
+            no_evap = (incident_angles > critical_angles) | (evap_prob_of_p_theta(momentum, incident_angles) > evap_eff)
+            # print(len(no_evap) == len(alive_surface_check))
+            # print(len(no_evap) == list(alive_surface_check).count(True))
             # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
-            a_L_noevap = alive_surface_check[no_evap] # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
-            dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap] = diffuse_and_specular('Liquid', (X[a_L_noevap], Y[a_L_noevap], Z[a_L_noevap]), (dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap]), diffuse_prob=0.0)
+            a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
+            dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap] = diffuse_and_specular('Liquid', (X[a_L_noevap], Y[a_L_noevap], 
+                                                                                Z[a_L_noevap]), (dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap]),
+                                                                                 diffuse_prob=0.0)
+
+            
+            a_L_evap = alive_surface_check & ~no_evap # THis is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and EVAPORATE
+            dx[a_L_evap], dy[a_L_evap], dz[a_L_evap], momentum[a_L_evap] = evaporation(momentum[a_L_evap], 
+                                                                                            energy[a_L_evap],
+                                                                                            velocity[a_L_evap], 
+                                                                                            direction=(dx[a_L_evap], dy[a_L_evap], dz[a_L_evap]))
 
 
-            evaporated[alive_surface_check] = np.where( no_evap, evaporated[alive_surface_check], True )
+
+            # point of this line is to set this big array equal to True if it evaporated
+            evaporated[a_L_evap] = True
+            print(list(evaporated).count(True))
+            # evaporated[alive_surface_check] = np.where( no_evap, evaporated[alive_surface_check], True )
             # ~~~~~~~~~~ If the QP doesn't evaporate, leave it where it is
-            X[alive_surface_check][no_evap] = X1[check1][no_evap]
-            Y[alive_surface_check][no_evap] = Y1[check1][no_evap]
-            Z[alive_surface_check][no_evap] = Z1[check1][no_evap] - 0.1
+            X[a_L_noevap] = X1[a_L_noevap]
+            Y[a_L_noevap] = Y1[a_L_noevap]
+            Z[a_L_noevap] = Z1[a_L_noevap] - 0.1
 
             # ~~~~~~~~~~ If the QP evaporates, move it up above the liquid surface 
-            X[alive_surface_check][~no_evap] = X1[check1][~no_evap]
-            Y[alive_surface_check][~no_evap] = Y1[check1][~no_evap]
-            Z[alive_surface_check][~no_evap] = Z1[check1][~no_evap] + 0.1
+            X[a_L_evap] = X1[a_L_evap]
+            Y[a_L_evap] = Y1[a_L_evap]
+            Z[a_L_evap] = Z1[a_L_evap] + 0.1
 
        
             
+        print(surface_type)
                                             
         check2 = np.array(["CPD" in str(s) for s in surface_type])
         #print("Hit %i CPDs" % len(surface_type[check2]))
-        if list(check2).count(True)> 0:
-            cpd_id = np.vectorize(extract_number)(surface_type[check2])
-            cond = (evaporated[living][check2])
+        print(list(check2 & living).count(True))
+        if list(living & check2).count(True)> 0:
+            print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
+            print('Detection Helium Atoms')
+            cpd_id = extract_number(surface_type[living & check2])
+            print(cpd_id)
+            cond = evaporated & living & check2
+            print(cond)
             #print("nDeps", len(deposits[living_indices[check2]][cond]))
-            deposits[living_indices[check2]] = np.where( cond, energy[living_indices[check2]], deposits[living_indices[check2]])
+            # deposits[living & check2] = np.where( cond, energy[living & check2], deposits[living & check2])
+            deposits[cond] = energy[cond] 
+            # print(list(deposits[living & check2]).count(True))
+            
             #going to store the CPD intersection point here for plotting purposes. 
             if plot_3d: 
-                try: 
-                    print(X1[check2])
-                    particles_x[n,:][living_indices[check2]] = X1[check2]
-                    particles_y[n,:][living_indices[check2]] = Y1[check2]
-                    particles_z[n,:][living_indices[check2]] = Z1[check2]
-                except IndexError:
-                    print('at least one reflection have gone on more than 20 times')        
+                particles_x[:,n][living & check2] = X1[living &check2]
+                particles_y[:,n][living & check2] = Y1[living &check2]
+                particles_z[:,n][living &check2] = Z1[living &check2]
             #now we set them to 0. 
-            alive[living_indices[check2]] = np.zeros(len(alive[living_indices[check2]]), dtype=int) #kill off QPs, they've hit a CPD
-            ids[living_indices[check2]] = np.where( cond, cpd_id, None ) #store the CPD IDs for evaporated QPs that hit a CPD
+            alive[living & check2] = np.zeros(len(alive[living & check2]), dtype=int) #kill off QPs, they've hit a CPD
+            ids[living & check2] = np.where( cond, cpd_id, None ) #store the CPD IDs for evaporated QPs that hit a CPD
             
-        check3 = (check1 == False) & (check2 == False) #doesn't reach liquid or CPD
+        check3 = (surface_type == 'XY') | (surface_type == 'Z') #doesn't reach liquid or CPD
         if len(surface_type[check3]) > 0:
+            print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Wall Reflections ~~~~~~~~~~~~~~~~~~~~')
             # Let's simplify this
             XY_check = (surface_type == 'XY')
             Z_check = (surface_type == 'Z')
-            a_xy_check = living_indices[check3 & XY_check] 
-            a_z_check = living_indices[check3 & Z_check]
-            r = np.random.random(len(surface_type[check3]))
+            a_xy_check = living & check3 & XY_check
+            a_z_check = living & check3 & Z_check
+            r = np.random.random(len(surface_type[living & check3]))
             cond = (r > reflection_prob)
-            alive[living_indices[check3]] = np.where(cond, 0, alive[check3]) #kill of those that don't reflect
+            alive[living &check3] = np.where(cond, 0, alive[living & check3]) #kill of those that don't reflect
             # ~~~~~~~~~~~ First do case of reflection off XY.
             if list(a_xy_check).count(True) > 0:
-                dx, dy, dz = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
+                dx[a_xy_check], dy[a_xy_check], dz[a_xy_check] = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
                                                 direction = (dx[a_xy_check], dy[a_xy_check], dz[a_xy_check]), 
                                                 diffuse_prob=diffuse_prob)
             # ~~~~~~~~~~~ Reflection off Z
             if list(a_z_check).count(True) > 0:
-                dx, dy, dz = diffuse_and_specular('Z', pos = (X1[a_z_check],Y1[a_z_check],Z1[a_z_check]), 
+                dx[a_z_check], dy[a_z_check], dz[a_z_check] = diffuse_and_specular('Z', pos = (X1[a_z_check],Y1[a_z_check],Z1[a_z_check]), 
                                                 direction = (dx[a_z_check], dy[a_z_check], dz[a_z_check]), 
                                                 diffuse_prob=diffuse_prob)           
-            X[living_indices[check3]] = X1[check3]
-            Y[living_indices[check3]] = Y1[check3]
-            Z[living_indices[check3]] = Z1[check3]
+            X[living & check3] = X1[living &check3]
+            Y[living & check3 ] = Y1[living &check3]
+            Z[living & check3] = Z1[living &check3]
         #print(alive)
         if plot_3d: 
             try: 
-                particles_x[:, n][living_indices] = X[living_indices]
-                particles_y[:, n][living_indices] = Y[living_indices]
-                particles_z[:, n][living_indices] = Z[living_indices]
+                particles_x[:, n][living] = X[living]
+                particles_y[:, n][living] = Y[living]
+                particles_z[:, n][living] = Z[living]
             except IndexError:
                 print('one reflection has gone on more than 20 times')
     if plot_3d:
         print(f'this is the bounced flag {bounced_flag}')
         ax = plt.figure().add_subplot(projection ='3d')
         for i in range(nQPs):
-            ax.plot(particles_x[i,:], particles_y[i,:], particles_z[i,:], '-o', label = f'bounced {bounced_flag[i]} times')
+            mask = (particles_x[i,:] == 0) &(particles_y[i,:] == 0) & (particles_z[i,:] == 0) 
+            ax.plot(particles_x[i,:][~mask], particles_y[i,:][~mask], particles_z[i,:][~mask], '-o', label = f'bounced {bounced_flag[i]} times')
         ax.set_xlim(-3.8, 3.8)
         ax.set_ylim(-3.8, 3.8)
         def walls(points, radius): 
