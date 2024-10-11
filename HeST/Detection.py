@@ -299,6 +299,20 @@ class VDetector:
     ############################################################################# '''
 
 def find_surface_intersection(start, direction, conditions):
+    """Finds the surface intersection by calculating the path, and finding the point right before the first intersection point.
+
+    Args:
+        start (_type_): _description_
+        direction (_type_): _description_
+        conditions (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    print('~~~~~~~~~~~~~~~~ Finding Surface Intersection ~~~~~~~~~~~~~~~~~')
+    print('\n')
+    print(start)
+    print(direction)
     if np.isscalar( start[0] ):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
@@ -308,7 +322,6 @@ def find_surface_intersection(start, direction, conditions):
     x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
     y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
     z_line = start[2][:, np.newaxis] + t * direction[2][:, np.newaxis]
-    print(x_line)
 
     
     dist = np.ones(len(start[0]))*9999.
@@ -316,10 +329,12 @@ def find_surface_intersection(start, direction, conditions):
     surface_type = np.full(len(start[0]), None)
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
-        print(cut, surface)
+        print(surface, cut)
+        # the below line is meant to calculate the indices of the past point
         first_ints = np.array([np.argmax(~cut[i]) for i in range(len(cut))])
         #if first_int == 0:
         # continue
+        # this determines how far the particle is ??
         d = t[np.arange(t.shape[0]), first_ints]
         cond = ( d < dist ) & (first_ints > 0)
         dist = np.where(cond, d, dist)        
@@ -438,55 +453,6 @@ def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta
 
 
 
-"""
-def evaporation(momentum, energy, velocity, direction):
-    if np.isscalar(momentum):
-        momentum = np.array([momentum])
-    if np.isscalar(energy):
-        energy = np.array([energy])
-    if np.isscalar(velocity):
-        velocity = np.array([velocity])
-    
-    #adapted from Pratyush's code
-    mass = 3.725472e9 #He mass in eV/c^2
-    c = 2.998e8 #m/s
-    Eb = 0.00062
-
-    # Going to revamp a lot of this, but it seems that most of it is pulled from adams thesis.
-    theta = np.arccos(direction[2]) #radians
-    #sin_critical_angle = np.sqrt( 2*(energy-0.00062)/(4.002603254e9) )/(np.abs(velocity)/3e8)
-    sin_critical_angle = np.sqrt(2.*mass*(energy - Eb))/momentum/1000. #Eq 2.19 from J. Adams thesis
-    
-    crit_angle = np.arcsin( sin_critical_angle ) #radians
-    
-    # there should be an hbar in here to make the right units I believe
-    Velocity_He_atom=np.sqrt( 2.*(energy-Eb)/(mass) )*c #~~~~~~~~~~~ This seems wrong, has the wrong units. Is it possible we are truncating? 
-
-    # So we make the incident angles, and find the reflected angle. After this, we prepare for various conditions where we cover our bases.
-    sin_theta_R = (velocity/c)*np.sin((theta))/np.sqrt( 2*(energy-Eb)/(mass) ) #Eq 2.18 from Adams thesis (q = mv/hbar*c)
-    theta_R = np.arcsin(sin_theta_R)
-    # Finding new Vz
-    new_Vz=Velocity_He_atom*np.cos(theta_R)
-    # ~~~~~~~~~~~ when V_y is 0. there is a lot of inverse tan stuff here, I feel like angles aren't the best way to deal with this..
-    cond = (direction[1] == 0.)
-    tan = np.where( cond, np.pi/2., np.arctan(np.abs(direction[0]/direction[1]) ))
-    new_Vy = np.where( cond, 0., direction[1]/np.abs(direction[1])*Velocity_He_atom*np.sin(theta_R)*np.sin((tan)) )
-    
-    # ~~~~~~~~~~ when V_x = 0
-    cond = (direction[0] == 0.)
-    new_Vx = np.where( cond, 0., direction[0]/np.abs(direction[0])*Velocity_He_atom*np.sin(theta_R)*np.cos((tan)))
-
-    magnitude=np.sqrt(new_Vx*new_Vx+new_Vy*new_Vy+new_Vz*new_Vz)
-
-    cond = (velocity <= 0) | (sin_critical_angle > 1.) | (theta > crit_angle) | ( energy < Eb )
-    energy = np.where( cond, 0., energy - Eb)
-  
-    Velocity_He_atom = np.where( cond, 0., Velocity_He_atom )
-    new_Vx = np.where( cond, 0., new_Vx/magnitude )
-    new_Vy = np.where( cond, 0., new_Vy/magnitude )
-    new_Vz = np.where( cond, 0., new_Vz/magnitude )
-    return np.where(cond, 0, 1), Velocity_He_atom, new_Vx, new_Vy, new_Vz"""
-
 def evaporation(momentum, energy, velocity, direction):
     """Calculate the kinematics of a particle, after evaporation. This means that every argument here
     is assumed to be only the ones that have already evaporated. 
@@ -506,9 +472,11 @@ def evaporation(momentum, energy, velocity, direction):
         velocity = np.array([velocity])
 
     m =  3.725472e6 #He mass in keV/c^2
+    E_binding = 0.00062
     pxi, pyi, pzi = momentum * dx, momentum * dy, momentum * dz
     pxf, pyf =pxi, pyi
     pzf = np.sqrt(2 * m * energy - pxi**2 - pyi**2)
+
     momentum = np.sqrt(pxf**2 + pyf**2 + pzf**2)
     dx, dy, dz = pxf/momentum, pyf/momentum, pzf/momentum
     # once again, just a reminder that these should only be for the QP element after evaporation
@@ -520,10 +488,12 @@ def evap_prob_of_p_theta(p, theta):
 
     
 
-def critical_angle(Energy, momentum, binding_energy = 0.00062):
-    m =  3.725472e9 #He mass in eV/c^2
+def critical_angle(Energy, momentum, binding_energy = 0.00062e-3):
+    m =  3.725472e6 #He mass in keV/c^2
     c = 2.998e8
-    return np.arcsin(2 * m * np.sqrt(Energy - binding_energy)/momentum)
+
+    print(np.sqrt(2 * m * (Energy - binding_energy))/momentum)
+    return np.arcsin(np.sqrt(2 * m * (Energy - binding_energy))/momentum)
 
 
 # Define a function to extract the CPD number using regex
@@ -533,16 +503,16 @@ def critical_angle(Energy, momentum, binding_energy = 0.00062):
 #     if match:
 #         return int(match.group())  # Convert the matched digits to an integer
 #     return None  # Return None if no digits are found
-
-@np.vectorize(otypes=[str])
+@np.vectorize
 def extract_number(s):
-    s_list = list(s)
-    try:
-        s_list[-1] = int(s_list[-1])
-    except ValueError:
-        print('The last element of the list was not a number')
-        return None
-    return s_list[-1]
+    if s == None:
+        return False
+    s = list(s)
+    last_element = s[-1]
+    if last_element.isdigit():
+        return int(last_element)
+    return False
+
 
 # Define a function to handle reflections off of walls
 def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
@@ -556,7 +526,12 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
     return dx, dy, dz
 
 
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diffuse_flag = False, diffuse_prob = 0.0, T=2., debug= False, plot_3d=False):
+"""
+##############################
+Quasiparticle Propagation
+##############################
+"""
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -571,6 +546,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         _type_: _description_
     """
     #if there is only one quasiparticle, we still need to prepare an array for it to be tracked
+    print(f'Starting at {start}')
     if np.isscalar(nQPs):
         X = np.full(nQPs, start[0])
         Y = np.full(nQPs, start[1])
@@ -579,9 +555,9 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
 
     #if the plot3d is true, then we want to record the path traveled. This means, for each particle, recording it's starting and ending point. Sadly, this also means lists. 
     if plot_3d:
-        particles_x = np.zeros(shape=(nQPs, 40))
-        particles_y = np.zeros(shape=(nQPs, 40))
-        particles_z = np.zeros(shape=(nQPs, 40))
+        particles_x = np.zeros(shape=(nQPs, 100))
+        particles_y = np.zeros(shape=(nQPs, 100))
+        particles_z = np.zeros(shape=(nQPs, 100))
  
     #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
@@ -590,14 +566,16 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
     dx, dy, dz = generate_random_direction(nQPs, 0.0, 2.0 * np.pi, -1.0, 1.0)
 
     if debug: 
-        dx =  np.full(shape=nQPs, fill_value=0.0)
-        dy = np.full(shape=nQPs, fill_value=0.0)
-        dz = np.full(shape=nQPs, fill_value=1.0)
+        dx = np.full(nQPs, debug_dir[0]) 
+        dy = np.full(nQPs, debug_dir[1]) 
+        dz = np.full(nQPs, debug_dir[2]) 
 
     total_time = np.zeros(nQPs, dtype=float)
     n=0
     #This draws from a k**2 distribution, essentially trying to follow the density of states
     momentum = Random_QPmomentum(nQPs) #keV/c
+    if choose_momentum:
+        momentum = np.full(nQPs, momentum_choice)
     #prepare the alive tracker, and then cut out those which we can't sense
     alive = np.ones(nQPs, dtype=int)
     cond = momentum <  1.1
@@ -605,8 +583,11 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
 
     #velocity and energy, both arrays of length nQP
     velocity = QP_velocity(momentum) #m/s
-    energy = QP_dispersion(momentum) #eV
+    energy = QP_dispersion(momentum) *1e-3 #KeV
     evaporated = np.zeros( nQPs, dtype=bool)
+    # instead of inverting the velocity, we invert the momentum and later, when we use velocity, we take the magnitude of it anyways
+    v_mask = velocity < 0
+    momentum[v_mask] = -momentum[v_mask]
     
     deposits = np.zeros(nQPs, dtype=float)
     ids = np.full(nQPs, None)
@@ -625,6 +606,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         #print(Z[living])
         #find a surface intersection
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), conditions)
+        print(surface_type)
         #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
         hit_surface_check= (surface_type != None)
         # print(list(hit_surface_check).count(False))
@@ -637,7 +619,6 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         alive = np.where(hit_surface_check, alive, 0)
         #reset the living parameter and indices
         living = ( alive > 0.5 )
-        living_indices = np.where(living)[0]
         # ~~~~~~~~~~~~~ To maintain the surface length is the right size
         # surface_type = surface_type[hit_surface_check]
         # print(len(living_indices) == len(surface_type))
@@ -648,8 +629,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         #set the new X1, Y1, Z1 space to exclude any particles that did not make it to a wall 
         
         #finding the time it took to go from initial point to intersection point
-        dist_sq = (pow(X1[living_indices]-X[living_indices],2.)+pow(Y1[living_indices]-Y[living_indices], 2.)+pow(Z1[living_indices]-Z[living_indices],2.)).astype(float)      
-        total_time[living_indices] = total_time[living_indices] + np.sqrt(dist_sq)/(velocity[living_indices]*1.0e-4)  #us
+        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
+        total_time[living] = total_time[living] + np.sqrt(dist_sq)/np.abs(velocity[living]*1.0e-4)  #us
         
         check1 = (surface_type == "Liquid")
         
@@ -663,8 +644,10 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
             # evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
             # calc critical angle
             critical_angles = critical_angle(energy, momentum) 
+            print(f' this is critical angles {critical_angles}')
             incident_angles = np.arccos(dz)
-            no_evap = (incident_angles > critical_angles) | (evap_prob_of_p_theta(momentum, incident_angles) > evap_eff)
+            print(incident_angles > critical_angles)
+            no_evap = (incident_angles > critical_angles) & (evap_prob_of_p_theta(momentum, incident_angles) > evap_eff)
             # print(len(no_evap) == len(alive_surface_check))
             # print(len(no_evap) == list(alive_surface_check).count(True))
             # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
@@ -684,7 +667,6 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
 
             # point of this line is to set this big array equal to True if it evaporated
             evaporated[a_L_evap] = True
-            print(list(evaporated).count(True))
             # evaporated[alive_surface_check] = np.where( no_evap, evaporated[alive_surface_check], True )
             # ~~~~~~~~~~ If the QP doesn't evaporate, leave it where it is
             X[a_L_noevap] = X1[a_L_noevap]
@@ -698,32 +680,24 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
 
        
             
-        print(surface_type)
                                             
         check2 = np.array(["CPD" in str(s) for s in surface_type])
         #print("Hit %i CPDs" % len(surface_type[check2]))
-        print(list(check2 & living).count(True))
         if list(living & check2).count(True)> 0:
             print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
-            print('Detection Helium Atoms')
-            cpd_id = extract_number(surface_type[living & check2])
-            print(cpd_id)
+            cpd_id = np.empty_like(surface_type, dtype=int)
+            for ii, surface in enumerate(surface_type):
+                cpd_id[ii] = extract_number(surface)
             cond = evaporated & living & check2
-            print(cond)
             #print("nDeps", len(deposits[living_indices[check2]][cond]))
             # deposits[living & check2] = np.where( cond, energy[living & check2], deposits[living & check2])
             deposits[cond] = energy[cond] 
-            # print(list(deposits[living & check2]).count(True))
             
             #going to store the CPD intersection point here for plotting purposes. 
-            if plot_3d: 
-                particles_x[:,n][living & check2] = X1[living &check2]
-                particles_y[:,n][living & check2] = Y1[living &check2]
-                particles_z[:,n][living &check2] = Z1[living &check2]
-            #now we set them to 0. 
-            alive[living & check2] = np.zeros(len(alive[living & check2]), dtype=int) #kill off QPs, they've hit a CPD
-            ids[living & check2] = np.where( cond, cpd_id, None ) #store the CPD IDs for evaporated QPs that hit a CPD
-            
+
+            alive[cond] = np.zeros(len(alive[cond]), dtype=int) #kill off QPs, they've hit a CPD
+            ids[cond] = cpd_id[cond] #store the CPD IDs for evaporated QPs that hit a CPD
+            # ids[cond] = cpd_id[cond]
         check3 = (surface_type == 'XY') | (surface_type == 'Z') #doesn't reach liquid or CPD
         if len(surface_type[check3]) > 0:
             print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Wall Reflections ~~~~~~~~~~~~~~~~~~~~')
@@ -748,18 +722,17 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
             X[living & check3] = X1[living &check3]
             Y[living & check3 ] = Y1[living &check3]
             Z[living & check3] = Z1[living &check3]
-        #print(alive)
         if plot_3d: 
             try: 
-                particles_x[:, n][living] = X[living]
-                particles_y[:, n][living] = Y[living]
-                particles_z[:, n][living] = Z[living]
+                particles_x[:, n][living] = X1[living]
+                particles_y[:, n][living] = Y1[living]
+                particles_z[:, n][living] = Z1[living]
             except IndexError:
-                print('one reflection has gone on more than 20 times')
+                    print('one reflection has gone on more than 20 times')
     if plot_3d:
         print(f'this is the bounced flag {bounced_flag}')
         ax = plt.figure().add_subplot(projection ='3d')
-        for i in range(nQPs):
+        for i in range(nQPs ):
             mask = (particles_x[i,:] == 0) &(particles_y[i,:] == 0) & (particles_z[i,:] == 0) 
             ax.plot(particles_x[i,:][~mask], particles_y[i,:][~mask], particles_z[i,:][~mask], '-o', label = f'bounced {bounced_flag[i]} times')
         ax.set_xlim(-3.8, 3.8)
@@ -781,7 +754,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=0.60, diff
         # ax.legend()
         print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
     hit = (deposits > 0.)
-    return deposits[hit], total_time[hit], ids[hit], bounced_flag[hit]
+    print(deposits[hit], total_time[hit])
+    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit
         
 def photon_propagation(nPhotons, start, conditions, reflection_prob):
         
@@ -924,7 +898,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, plot_3d = False):
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0):
     '''
     Attempt to simulate the CPD response for quasiparticles.
 
@@ -967,8 +941,11 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
         
-    hits, arrival_times, cpd_ids, bounced_flag = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), evap_eff=detector.get_evaporation_eff(), T=T, diffuse_flag=True,diffuse_prob=detector.get_diffuse_prob() ,debug=debug, plot_3d = plot_3d)
-    
+    hits, arrival_times, cpd_ids, bounced_flag, hit = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), 
+                                                                evap_eff=detector.get_evaporation_eff(), T=T, diffuse_prob=detector.get_diffuse_prob(), 
+                                                                debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, momentum_choice = momentum_choice)
+    bounce_nums = bounced_flag
+    bounced_flag = bounced_flag[hit]
     coincidence = 0
     for i in range(nCPDs):
         cond = (cpd_ids == i)
@@ -981,7 +958,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
         arrivalTimes[i] = arrival_times[cond]
         bounce_flag_with_cpd[i] = bounced_flag[cond]
 
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd)
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums)
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
