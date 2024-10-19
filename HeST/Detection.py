@@ -7,7 +7,7 @@ from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity
 from .HeST_Core import Singlet_PhotonEnergy
 
 class VCPD:
-    def __init__(self, surface_condition, baselineNoise, phononConversion=0.25, bounced_flag = 0):
+    def __init__(self, surface_condition, baselineNoise, phononConversion=0.25, bounced_flag = 0, positions = 0):
         '''
         Create a Virtual CPD class to keep track of individual CPDs
         and add them to the VDetector object.
@@ -25,6 +25,7 @@ class VCPD:
         self.baselineNoise     = np.array( baselineNoise )
         self.phononConversion  = phononConversion
         self.bounce_flag       = bounced_flag
+        self.positions = positions
 
 
     def set_surface_condition(self, f1):
@@ -310,9 +311,6 @@ def find_surface_intersection(start, direction, conditions):
         _type_: _description_
     """
     print('~~~~~~~~~~~~~~~~ Finding Surface Intersection ~~~~~~~~~~~~~~~~~')
-    print('\n')
-    print(start)
-    print(direction)
     if np.isscalar( start[0] ):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
@@ -329,7 +327,6 @@ def find_surface_intersection(start, direction, conditions):
     surface_type = np.full(len(start[0]), None)
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
-        print(surface, cut)
         # the below line is meant to calculate the indices of the past point
         first_ints = np.array([np.argmax(~cut[i]) for i in range(len(cut))])
         #if first_int == 0:
@@ -344,7 +341,6 @@ def find_surface_intersection(start, direction, conditions):
         coords[1] = np.where(cond, y_line[np.arange(y_line.shape[0]), first_ints-1], coords[1])
         coords[2] = np.where(cond, z_line[np.arange(z_line.shape[0]), first_ints-1], coords[2])
         surface_type = np.where( cond, surface, surface_type )
-        
     return np.array(coords[0], dtype = float), np.array(coords[1], dtype = float), np.array(coords[2], dtype= float), surface_type
 
 
@@ -472,10 +468,10 @@ def evaporation(momentum, energy, velocity, direction):
         velocity = np.array([velocity])
 
     m =  3.725472e6 #He mass in keV/c^2
-    E_binding = 0.00062
+    E_binding = 0.00062 * 1e-3
     pxi, pyi, pzi = momentum * dx, momentum * dy, momentum * dz
     pxf, pyf =pxi, pyi
-    pzf = np.sqrt(2 * m * energy - pxi**2 - pyi**2)
+    pzf = np.sqrt(2 * m * (energy - E_binding) - pxi**2 - pyi**2)
 
     momentum = np.sqrt(pxf**2 + pyf**2 + pzf**2)
     dx, dy, dz = pxf/momentum, pyf/momentum, pzf/momentum
@@ -484,7 +480,8 @@ def evaporation(momentum, energy, velocity, direction):
 
 def evap_prob_of_p_theta(p, theta):
     # For now, we are just going to do a uniform distribution, but this is to build this later
-    return np.random.uniform(size = len(theta))
+    the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(theta))
+    return the_nums
 
     
 
@@ -492,8 +489,7 @@ def critical_angle(Energy, momentum, binding_energy = 0.00062e-3):
     m =  3.725472e6 #He mass in keV/c^2
     c = 2.998e8
 
-    print(np.sqrt(2 * m * (Energy - binding_energy))/momentum)
-    return np.arcsin(np.sqrt(2 * m * (Energy - binding_energy))/momentum)
+    return np.arcsin(np.sqrt(2 * m * (Energy - binding_energy))/np.abs(momentum))
 
 
 # Define a function to extract the CPD number using regex
@@ -526,12 +522,31 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
     return dx, dy, dz
 
 
+
+@np.vectorize
+def assign_flavors(p):
+    if .955 < p <   2.168:
+        flavor = 'phonon'
+    elif 2.383 < p < 3.77:
+        flavor = 'R-'
+    elif 3.843<p < 4.541:
+
+        flavor = 'R+'
+    else:
+        flavor = 'out_of_range'
+    return flavor
+
+
+
+
+
+
 """
 ##############################
 Quasiparticle Propagation
 ##############################
 """
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0):
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -545,24 +560,21 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
     Returns:
         _type_: _description_
     """
-    #if there is only one quasiparticle, we still need to prepare an array for it to be tracked
-    print(f'Starting at {start}')
+    # initializing Variables
+    # ~~~~~~~~~~~~~~~~~~~~~~
+    if verbose: print(f'Starting at {start}')
     if np.isscalar(nQPs):
         X = np.full(nQPs, start[0])
         Y = np.full(nQPs, start[1])
         Z = np.full(nQPs, start[2])
         start = np.array([X, Y, Z])
-
-    #if the plot3d is true, then we want to record the path traveled. This means, for each particle, recording it's starting and ending point. Sadly, this also means lists. 
+    paths = (0,0,0)
     if plot_3d:
         particles_x = np.zeros(shape=(nQPs, 100))
         particles_y = np.zeros(shape=(nQPs, 100))
         particles_z = np.zeros(shape=(nQPs, 100))
  
-    #assign the starting values of the array
     X, Y, Z = start[0], start[1], start[2]
-    #randomely assign the phi and theta directions, each with an array the size of the number of quasiparticles. 
-    # I almost feel like this should be a function, where we just input the range of these things
     dx, dy, dz = generate_random_direction(nQPs, 0.0, 2.0 * np.pi, -1.0, 1.0)
 
     if debug: 
@@ -576,6 +588,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
     momentum = Random_QPmomentum(nQPs) #keV/c
     if choose_momentum:
         momentum = np.full(nQPs, momentum_choice)
+
+    flavor = assign_flavors(momentum)
     #prepare the alive tracker, and then cut out those which we can't sense
     alive = np.ones(nQPs, dtype=int)
     cond = momentum <  1.1
@@ -588,7 +602,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
     # instead of inverting the velocity, we invert the momentum and later, when we use velocity, we take the magnitude of it anyways
     v_mask = velocity < 0
     momentum[v_mask] = -momentum[v_mask]
-    
+     
     deposits = np.zeros(nQPs, dtype=float)
     ids = np.full(nQPs, None)
     bounced_flag = np.zeros_like(alive)
@@ -605,8 +619,10 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         living = ( alive > 0.5 )
         #print(Z[living])
         #find a surface intersection
+        if verbose: 
+            print(f'starting point: {np.array([X, Y, Z])}, direction of travel: {np.array([dx, dy, dz])}')
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), conditions)
-        print(surface_type)
+        if verbose: print(surface_type)
         #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
         hit_surface_check= (surface_type != None)
         # print(list(hit_surface_check).count(False))
@@ -644,10 +660,12 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             # evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
             # calc critical angle
             critical_angles = critical_angle(energy, momentum) 
-            print(f' this is critical angles {critical_angles}')
             incident_angles = np.arccos(dz)
-            print(incident_angles > critical_angles)
-            no_evap = (incident_angles > critical_angles) & (evap_prob_of_p_theta(momentum, incident_angles) > evap_eff)
+            no_evap = (incident_angles > critical_angles) & (evap_prob_of_p_theta(momentum, incident_angles) < 1.0)
+            if verbose:
+                print(f'this is critical angles {critical_angles} and this is incident {incident_angles}')
+                print(evap_eff)
+                print(no_evap)
             # print(len(no_evap) == len(alive_surface_check))
             # print(len(no_evap) == list(alive_surface_check).count(True))
             # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
@@ -684,7 +702,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         check2 = np.array(["CPD" in str(s) for s in surface_type])
         #print("Hit %i CPDs" % len(surface_type[check2]))
         if list(living & check2).count(True)> 0:
-            print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
+            if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
             cpd_id = np.empty_like(surface_type, dtype=int)
             for ii, surface in enumerate(surface_type):
                 cpd_id[ii] = extract_number(surface)
@@ -700,7 +718,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             # ids[cond] = cpd_id[cond]
         check3 = (surface_type == 'XY') | (surface_type == 'Z') #doesn't reach liquid or CPD
         if len(surface_type[check3]) > 0:
-            print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Wall Reflections ~~~~~~~~~~~~~~~~~~~~')
+            if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Wall Reflections ~~~~~~~~~~~~~~~~~~~~')
             # Let's simplify this
             XY_check = (surface_type == 'XY')
             Z_check = (surface_type == 'Z')
@@ -730,7 +748,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             except IndexError:
                     print('one reflection has gone on more than 20 times')
     if plot_3d:
-        print(f'this is the bounced flag {bounced_flag}')
+        if verbose: print(f'this is the bounced flag {bounced_flag}')
         ax = plt.figure().add_subplot(projection ='3d')
         for i in range(nQPs ):
             mask = (particles_x[i,:] == 0) &(particles_y[i,:] == 0) & (particles_z[i,:] == 0) 
@@ -752,10 +770,11 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         ax.plot_surface(xx, yy, z_cpd, alpha = 0.2, label = 'CPD Level' )
 
         # ax.legend()
-        print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
+        if verbose: print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
     hit = (deposits > 0.)
-    print(deposits[hit], total_time[hit])
-    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit
+    if verbose: print(deposits[hit], total_time[hit])
+    paths = (particles_x, particles_y, particles_z)
+    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths, flavor[hit]
         
 def photon_propagation(nPhotons, start, conditions, reflection_prob):
         
@@ -898,7 +917,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0):
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0, verbose = False):
     '''
     Attempt to simulate the CPD response for quasiparticles.
 
@@ -919,31 +938,15 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     arrivalTimes = [[] for x in range(nCPDs)]
     bounce_flag_with_cpd = [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
-    #check to see if a map is loaded
-    if useMap:
-        hitProbabilities = detector.get_QP_hits( X, Y, Z)
-        coincidence = 0
-
-        for i in range(nCPDs):
-            nHits = np.random.binomial( QPs, hitProbabilities[i] )
-            coincidence += min([nHits, 1]) # 0 or 1
-            chAreas[i] = nHits * detector.get_adsorption_gain() # eV
-            thisCPD = detector.get_CPD(i)
-            noiseBaseline = thisCPD.get_baselineNoise()
-            noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
-            chAreas[i] += np.sum(noise)
-
-        return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
-
-    #if the map hasn't been loaded or we want arrival times...
     conditions = detector.get_surface_conditions()
     conditions.append( detector.liquid_surface )
     for i in range(nCPDs):
         conditions.append( (detector.get_CPD(i)).get_surface_condition() )
         
-    hits, arrival_times, cpd_ids, bounced_flag, hit = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), 
+    hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), 
                                                                 evap_eff=detector.get_evaporation_eff(), T=T, diffuse_prob=detector.get_diffuse_prob(), 
-                                                                debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, momentum_choice = momentum_choice)
+                                                                debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, 
+                                                                momentum_choice = momentum_choice, verbose=verbose)
     bounce_nums = bounced_flag
     bounced_flag = bounced_flag[hit]
     coincidence = 0
@@ -958,7 +961,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
         arrivalTimes[i] = arrival_times[cond]
         bounce_flag_with_cpd[i] = bounced_flag[cond]
 
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums)
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums, positions = paths, flavor=flavor)
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)

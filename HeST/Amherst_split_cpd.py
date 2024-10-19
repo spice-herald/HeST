@@ -34,7 +34,7 @@ cpd2 = detection.VCPD(sensor2_conditions, baseline_noise, phonon_conversion)
 def wall_conditions(x, y, z):
     boundary_type = "XY"
     radius = 3. #cm
-    height = 2.75 #cm
+    height = 2.0 #cm
     return ((x*x + y*y < radius*radius) & (z < height) ) | (z > height), boundary_type
 
 def bottom_conditions(x, y, z):
@@ -44,11 +44,11 @@ def bottom_conditions(x, y, z):
 
 def liquid_surface(x, y, z):
     boundary_type = "Liquid"
-    height = 2.75 #cm
+    height = 2.0 #cm
     return (z < height), boundary_type
 
 def liquid_conditions(x, y, z):
-    height = 2.75 #cm
+    height = 2.0 #cm
     radius = 3. #cm
     bottom = 0. #cm
     return ((x*x + y*y < radius*radius) & (z < height) & (z > bottom))
