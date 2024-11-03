@@ -213,6 +213,24 @@ def GetInterpFunc(d_path):
     X = data[:,0]
     Y = data[:,1]
     return interp1d(X,Y, kind = 'linear')
+
+def get_phonon_mom_energy(d_path):
+    data = np.loadtxt(d_path, delimiter=',')
+    X = data[0:62,1]
+    Y = data[0:62,0]
+    return interp1d(X,Y, kind = 'linear')
+
+def get_rminus_mom_energy(d_path):
+    data = np.loadtxt(d_path, delimiter=',')
+    X = data[61:102,1]
+    Y = data[61:102,0]
+    return interp1d(X,Y, kind = 'linear')
+
+def get_rplus_mom_energy(d_path):
+    data = np.loadtxt(d_path, delimiter=',')
+    X = data[101:,1]
+    Y = data[101:,0]
+    return interp1d(X,Y, kind = 'linear')
     
 
 def QP_dispersion(p ):

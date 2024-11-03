@@ -3,7 +3,7 @@ from detprocess import Template
 import numpy as np
 import re
 import matplotlib.pyplot as plt
-from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity 
+from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, get_rplus_mom_energy
 from .HeST_Core import Singlet_PhotonEnergy
 
 class VCPD:
@@ -315,7 +315,7 @@ def find_surface_intersection(start, direction, conditions):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
         direction = np.array([np.array([p]) for p in direction])
-    t = np.array([np.linspace(0, 12, 300) for i in range(len(start[0]))])  # Parameter range for the line
+    t = np.array([np.linspace(0, 10, 250) for i in range(len(start[0]))])  # Parameter range for the line
     # Calculate the line coordinates
     x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
     y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
@@ -525,16 +525,101 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
 
 @np.vectorize
 def assign_flavors(p):
-    if .955 < p <   2.168:
+    if p < 0.955:
+        flavor = 'low energy phonon'
+    elif .955 < p <   2.184972:
         flavor = 'phonon'
-    elif 2.383 < p < 3.77:
+    elif 2.22538 < p < 3.7999:
         flavor = 'R-'
-    elif 3.843<p < 4.541:
+    elif 3.840<p < 4.565:
 
         flavor = 'R+'
     else:
-        flavor = 'out_of_range'
+        flavor = 'high energy Roton'
     return flavor
+
+# ~~~~~~~~~~~~ Flavor Switching Functions ~~~~~~~~~~~~~~~
+@np.vectorize
+def compute_conserved_mom(X, Y, dx, dy, dz, momentum):
+    direction = np.array([dx, dy, dz])
+    xy_vec = -1 * np.array([X, Y, 0], dtype = float) # compute the normal vector of the wall
+    xy_vec = xy_vec/(np.sqrt(np.sum(xy_vec**2))) # normalize this vector
+    dir_transverse = direction- np.dot(direction, xy_vec) * xy_vec
+    conserved_momentum= momentum * dir_transverse
+    conserved_magnitude = np.sum(conserved_momentum**2)
+    return conserved_magnitude
+
+
+phonon_interp = get_phonon_mom_energy('./dispersion_data.csv')
+rminus_interp = get_rminus_mom_energy('./dispersion_data.csv')
+rplus_interp = get_rplus_mom_energy('./dispersion_data.csv')
+def random_conversion(energy, momentum, flavor, X, Y, Z, dx, dy, dz):
+    """ This function handles the conversion process, which is done by randomely choosing new momentums, that match the original. 
+
+    Args:
+        energy (_type_): The energies of the array of quasiparticles. This should be in meV 
+        momentum (_type_): _description_
+        flavor (_type_): _description_
+        pos (_type_): _description_
+        direction (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    # generate a set of random numbers 
+    r_nums = np.random.uniform(low = 0, high= 1, size = (len(energy), 3))
+    old_momentum = momentum
+    # decide on who goes where
+    phonon_mom = phonon_interp(energy)
+    rminus_mom = rminus_interp(energy)
+    rplus_mom = rplus_interp(energy)
+    flavors = np.column_stack((np.full(np.shape(phonon_mom), r'phonon'), np.full(np.shape(phonon_mom), r'R-') , np.full(np.shape(phonon_mom), r'R+')))
+    
+    conserved_mom_sq= compute_conserved_mom(X, Y, dx, dy, dz, old_momentum)
+    # compute the conserved momentum, which is the momentum in this direction
+
+    phonon_mask = phonon_mom**2 < conserved_mom_sq 
+    rminus_mask = rminus_mom**2 < conserved_mom_sq
+    rplus_mask = rplus_mom**2 < conserved_mom_sq
+    # generate arrays of flavors
+    r_nums[:,0][phonon_mask] = 0
+    r_nums[:,1][rminus_mask] = 0
+    r_nums[:,2][rplus_mask] = 0
+    momentums = np.column_stack((phonon_mom, rminus_mom, rplus_mom))
+    max_indices = np.argmax(r_nums, axis=1)  # Correct indexing along rows
+    momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
+    flavor = flavors[np.arange(len(energy)), max_indices]
+    dx, dy, dz= convert_off_XY(conserved_mom_sq, momentum, X, Y, Z, dx, dy, dz)
+    return momentum, flavor, dx, dy, dz
+
+
+@np.vectorize
+def convert_off_XY(conserved_mom, new_momentum, X, Y, Z, dx, dy, dz):
+    """Handles the converting and reflection off of XY surface (the cylindrical area) based upon QP kinematics. 
+    Conserves the translational momentum, but does the longitudinal momentum.
+
+    Args:
+        old_momentum (float): This is the old momentum, aka the input momentum to the system. This will be negative if the input QP was previously a R- roton. Should be in units of KeV/c 
+        new_momentum (_type_): This is the new momentum, after conversion. This should be negative if the desired QP output is a R- roton.  Should be in units of KeV/c
+        pos (tuple or ndarray): This is the position of intersection with the wall
+        direction (tuple or ndarray): This is the incident direction 
+    """
+    direction = np.array([dx, dy, dz])
+    xy_vec = -1 * np.array([X, Y, 0], dtype = float) # compute the normal vector of the wall
+    xy_vec = xy_vec/(np.sqrt(np.sum(xy_vec**2))) # normalize this vector
+    # compute the conserved momentum, which is the momentum in this direction
+    new_momentum_parallel= np.sqrt(new_momentum**2 - (conserved_mom))
+    if new_momentum < 0:
+        new_momentum_parallel = new_momentum_parallel *-1
+    new_total_mom_vec = new_momentum_parallel * xy_vec +np.sqrt(conserved_mom) * xy_vec 
+    new_total_mom_vec = new_total_mom_vec/new_momentum
+    direction = new_total_mom_vec/np.linalg.norm(new_total_mom_vec, ord = 2)
+    return direction[0], direction[1], direction[2]
+
+
+    
+
+        
 
 
 
@@ -546,7 +631,7 @@ def assign_flavors(p):
 Quasiparticle Propagation
 ##############################
 """
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False):
+def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -622,7 +707,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         if verbose: 
             print(f'starting point: {np.array([X, Y, Z])}, direction of travel: {np.array([dx, dy, dz])}')
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), conditions)
-        if verbose: print(surface_type)
+        if verbose: print(f'This is the surface type {surface_type}')
         #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
         hit_surface_check= (surface_type != None)
         # print(list(hit_surface_check).count(False))
@@ -664,15 +749,14 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             no_evap = (incident_angles > critical_angles) & (evap_prob_of_p_theta(momentum, incident_angles) < 1.0)
             if verbose:
                 print(f'this is critical angles {critical_angles} and this is incident {incident_angles}')
-                print(evap_eff)
-                print(no_evap)
+                print(f'This is no_evap {no_evap}')
             # print(len(no_evap) == len(alive_surface_check))
             # print(len(no_evap) == list(alive_surface_check).count(True))
             # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
             a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
             dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap] = diffuse_and_specular('Liquid', (X[a_L_noevap], Y[a_L_noevap], 
                                                                                 Z[a_L_noevap]), (dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap]),
-                                                                                 diffuse_prob=0.0)
+                                                                                 diffuse_prob=diffuse_prob)
 
             
             a_L_evap = alive_surface_check & ~no_evap # THis is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and EVAPORATE
@@ -732,6 +816,15 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
                 dx[a_xy_check], dy[a_xy_check], dz[a_xy_check] = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
                                                 direction = (dx[a_xy_check], dy[a_xy_check], dz[a_xy_check]), 
                                                 diffuse_prob=diffuse_prob)
+                if flavor_switching:
+                    out_of_range = (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
+                    a_xy_switch_check = a_xy_check & out_of_range 
+                    if list(a_xy_switch_check).count(True) > 0:
+                        momentum[a_xy_switch_check], flavor[a_xy_switch_check], dx[a_xy_switch_check], dy[a_xy_switch_check], dz[a_xy_switch_check] = random_conversion(flavor = flavor[a_xy_switch_check], energy=energy[a_xy_switch_check] * 1e6,
+                                                                                                                                 momentum=momentum[a_xy_switch_check], 
+                                                                                                                                 X = X1[a_xy_switch_check],Y = Y1[a_xy_switch_check],Z  = Z1[a_xy_switch_check], 
+                                                                                                                                dx = dx[a_xy_switch_check], dy = dy[a_xy_switch_check], dz = dz[a_xy_switch_check])
+
             # ~~~~~~~~~~~ Reflection off Z
             if list(a_z_check).count(True) > 0:
                 dx[a_z_check], dy[a_z_check], dz[a_z_check] = diffuse_and_specular('Z', pos = (X1[a_z_check],Y1[a_z_check],Z1[a_z_check]), 
@@ -771,9 +864,11 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
 
         # ax.legend()
         if verbose: print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
+        paths = (particles_x, particles_y, particles_z)
+    else:
+        paths = (0,0,0)
     hit = (deposits > 0.)
     if verbose: print(deposits[hit], total_time[hit])
-    paths = (particles_x, particles_y, particles_z)
     return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths, flavor[hit]
         
 def photon_propagation(nPhotons, start, conditions, reflection_prob):
@@ -917,7 +1012,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0, verbose = False):
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
     '''
     Attempt to simulate the CPD response for quasiparticles.
 
@@ -937,6 +1032,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     nHitsPerCPD = [0]*nCPDs
     arrivalTimes = [[] for x in range(nCPDs)]
     bounce_flag_with_cpd = [[] for x in range(nCPDs)]
+    flavor_with_cpd= [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
     conditions = detector.get_surface_conditions()
     conditions.append( detector.liquid_surface )
@@ -946,8 +1042,11 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), 
                                                                 evap_eff=detector.get_evaporation_eff(), T=T, diffuse_prob=detector.get_diffuse_prob(), 
                                                                 debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, 
-                                                                momentum_choice = momentum_choice, verbose=verbose)
+                                                                momentum_choice = momentum_choice, verbose=verbose, 
+                                                                flavor_switching=flavor_switching)
     bounce_nums = bounced_flag
+    print(len(bounced_flag))
+    print(len(hit))
     bounced_flag = bounced_flag[hit]
     coincidence = 0
     for i in range(nCPDs):
@@ -960,8 +1059,9 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
         chAreas[i] += np.sum(noise)
         arrivalTimes[i] = arrival_times[cond]
         bounce_flag_with_cpd[i] = bounced_flag[cond]
+        flavor_with_cpd[i] = flavor[cond]
 
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums, positions = paths, flavor=flavor)
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums, positions = paths, flavor=flavor_with_cpd)
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
