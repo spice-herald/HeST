@@ -369,7 +369,6 @@ def diffuse_and_specular(surface, pos, direction, diffuse_prob):
         dz = -dz
         return dx, dy, dz
 
-
     if surface == 'XY':
         #we will do both specular and diffuse here. 
         specular_cut = np.random.uniform(size = (len(dx),)) > diffuse_prob
@@ -527,11 +526,11 @@ def wall_reflect(X, Y, dx, dy, dz, diffuse = False):
 def assign_flavors(p):
     if p < 0.955:
         flavor = 'low energy phonon'
-    elif .955 < p <   2.184972:
+    elif .949 < p <   2.174972:
         flavor = 'phonon'
-    elif 2.22538 < p < 3.7999:
+    elif 2.22538 < p < 3.7899:
         flavor = 'R-'
-    elif 3.840<p < 4.565:
+    elif 3.840<p < 4.555:
 
         flavor = 'R+'
     else:
@@ -546,14 +545,13 @@ def compute_conserved_mom(X, Y, dx, dy, dz, momentum):
     xy_vec = xy_vec/(np.sqrt(np.sum(xy_vec**2))) # normalize this vector
     dir_transverse = direction- np.dot(direction, xy_vec) * xy_vec
     conserved_momentum= momentum * dir_transverse
-    conserved_magnitude = np.sum(conserved_momentum**2)
-    return conserved_magnitude
+    return conserved_momentum[0], conserved_momentum[1], conserved_momentum[2]
 
 
 phonon_interp = get_phonon_mom_energy('./dispersion_data.csv')
 rminus_interp = get_rminus_mom_energy('./dispersion_data.csv')
 rplus_interp = get_rplus_mom_energy('./dispersion_data.csv')
-def random_conversion(energy, momentum, flavor, X, Y, Z, dx, dy, dz):
+def random_conversion(energy, momentum, old_flavor, X, Y, Z, dx, dy, dz):
     """ This function handles the conversion process, which is done by randomely choosing new momentums, that match the original. 
 
     Args:
@@ -575,9 +573,9 @@ def random_conversion(energy, momentum, flavor, X, Y, Z, dx, dy, dz):
     rplus_mom = rplus_interp(energy)
     flavors = np.column_stack((np.full(np.shape(phonon_mom), r'phonon'), np.full(np.shape(phonon_mom), r'R-') , np.full(np.shape(phonon_mom), r'R+')))
     
-    conserved_mom_sq= compute_conserved_mom(X, Y, dx, dy, dz, old_momentum)
+    cons_x, cons_y, cons_z= compute_conserved_mom(X, Y, dx, dy, dz, old_momentum)
     # compute the conserved momentum, which is the momentum in this direction
-
+    conserved_mom_sq = (cons_x**2 + cons_y**2 + cons_z**2)
     phonon_mask = phonon_mom**2 < conserved_mom_sq 
     rminus_mask = rminus_mom**2 < conserved_mom_sq
     rplus_mask = rplus_mom**2 < conserved_mom_sq
@@ -585,16 +583,22 @@ def random_conversion(energy, momentum, flavor, X, Y, Z, dx, dy, dz):
     r_nums[:,0][phonon_mask] = 0
     r_nums[:,1][rminus_mask] = 0
     r_nums[:,2][rplus_mask] = 0
+    print(r_nums)
     momentums = np.column_stack((phonon_mom, rminus_mom, rplus_mom))
     max_indices = np.argmax(r_nums, axis=1)  # Correct indexing along rows
     momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
     flavor = flavors[np.arange(len(energy)), max_indices]
-    dx, dy, dz= convert_off_XY(conserved_mom_sq, momentum, X, Y, Z, dx, dy, dz)
+    no_change_mask = (flavor == old_flavor)
+    if len(dx[~no_change_mask]) >0: 
+        dx[~no_change_mask], dy[~no_change_mask], dz[~no_change_mask]= convert_off_XY(cons_x[~no_change_mask],
+                                                                    cons_y[~no_change_mask], cons_z[~no_change_mask], momentum[~no_change_mask],
+                                                                    X[~no_change_mask], Y[~no_change_mask], Z[~no_change_mask], dx[~no_change_mask],
+                                                                    dy[~no_change_mask], dz[~no_change_mask])
     return momentum, flavor, dx, dy, dz
 
 
 @np.vectorize
-def convert_off_XY(conserved_mom, new_momentum, X, Y, Z, dx, dy, dz):
+def convert_off_XY(conserved_x, conserved_y, conserved_z, new_momentum, X, Y, Z, dx, dy, dz):
     """Handles the converting and reflection off of XY surface (the cylindrical area) based upon QP kinematics. 
     Conserves the translational momentum, but does the longitudinal momentum.
 
@@ -608,10 +612,10 @@ def convert_off_XY(conserved_mom, new_momentum, X, Y, Z, dx, dy, dz):
     xy_vec = -1 * np.array([X, Y, 0], dtype = float) # compute the normal vector of the wall
     xy_vec = xy_vec/(np.sqrt(np.sum(xy_vec**2))) # normalize this vector
     # compute the conserved momentum, which is the momentum in this direction
-    new_momentum_parallel= np.sqrt(new_momentum**2 - (conserved_mom))
+    new_momentum_parallel= np.sqrt(new_momentum**2 - (conserved_x**2 + conserved_y**2 + conserved_z**2))
     if new_momentum < 0:
         new_momentum_parallel = new_momentum_parallel *-1
-    new_total_mom_vec = new_momentum_parallel * xy_vec +np.sqrt(conserved_mom) * xy_vec 
+    new_total_mom_vec = new_momentum_parallel * xy_vec + np.array([conserved_x, conserved_y, conserved_z])
     new_total_mom_vec = new_total_mom_vec/new_momentum
     direction = new_total_mom_vec/np.linalg.norm(new_total_mom_vec, ord = 2)
     return direction[0], direction[1], direction[2]
@@ -747,13 +751,13 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             critical_angles = critical_angle(energy, momentum) 
             incident_angles = np.arccos(dz)
             no_evap = (incident_angles > critical_angles) & (evap_prob_of_p_theta(momentum, incident_angles) < 1.0)
+            a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
             if verbose:
                 print(f'this is critical angles {critical_angles} and this is incident {incident_angles}')
-                print(f'This is no_evap {no_evap}')
+                print(f'This is no_evap {a_L_noevap}')
             # print(len(no_evap) == len(alive_surface_check))
             # print(len(no_evap) == list(alive_surface_check).count(True))
             # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
-            a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
             dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap] = diffuse_and_specular('Liquid', (X[a_L_noevap], Y[a_L_noevap], 
                                                                                 Z[a_L_noevap]), (dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap]),
                                                                                  diffuse_prob=diffuse_prob)
@@ -773,12 +777,12 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             # ~~~~~~~~~~ If the QP doesn't evaporate, leave it where it is
             X[a_L_noevap] = X1[a_L_noevap]
             Y[a_L_noevap] = Y1[a_L_noevap]
-            Z[a_L_noevap] = Z1[a_L_noevap] - 0.1
+            Z[a_L_noevap] = Z1[a_L_noevap] - 0.05
 
             # ~~~~~~~~~~ If the QP evaporates, move it up above the liquid surface 
             X[a_L_evap] = X1[a_L_evap]
             Y[a_L_evap] = Y1[a_L_evap]
-            Z[a_L_evap] = Z1[a_L_evap] + 0.1
+            Z[a_L_evap] = Z1[a_L_evap] + 0.05
 
        
             
@@ -817,13 +821,16 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
                                                 direction = (dx[a_xy_check], dy[a_xy_check], dz[a_xy_check]), 
                                                 diffuse_prob=diffuse_prob)
                 if flavor_switching:
-                    out_of_range = (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
-                    a_xy_switch_check = a_xy_check & out_of_range 
+                    converting_range= (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
+                    a_xy_switch_check = a_xy_check & converting_range
                     if list(a_xy_switch_check).count(True) > 0:
-                        momentum[a_xy_switch_check], flavor[a_xy_switch_check], dx[a_xy_switch_check], dy[a_xy_switch_check], dz[a_xy_switch_check] = random_conversion(flavor = flavor[a_xy_switch_check], energy=energy[a_xy_switch_check] * 1e6,
+                        if verbose and debug: hold_flavor = flavor[a_xy_switch_check]
+                        momentum[a_xy_switch_check], flavor[a_xy_switch_check], dx[a_xy_switch_check], dy[a_xy_switch_check], dz[a_xy_switch_check] = random_conversion(old_flavor = flavor[a_xy_switch_check], energy=energy[a_xy_switch_check] * 1e6,
                                                                                                                                  momentum=momentum[a_xy_switch_check], 
                                                                                                                                  X = X1[a_xy_switch_check],Y = Y1[a_xy_switch_check],Z  = Z1[a_xy_switch_check], 
                                                                                                                                 dx = dx[a_xy_switch_check], dy = dy[a_xy_switch_check], dz = dz[a_xy_switch_check])
+                        velocity[a_xy_switch_check] = QP_velocity(np.abs(momentum[a_xy_switch_check]))
+                        if verbose and debug: print(f' old flavors: {hold_flavor} and new flavors  {flavor[a_xy_switch_check]}')
 
             # ~~~~~~~~~~~ Reflection off Z
             if list(a_z_check).count(True) > 0:
@@ -858,12 +865,11 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         ax.plot(x,y)
         xx, yy = np.meshgrid(np.linspace(-3.0, 3.0, 50), np.linspace(-3.0, 3.0, 50))
         z = np.ones_like(xx) 
-        ax.plot_surface(xx, yy, z * 2.75, alpha = 0.2,  label = 'Liquid Surface')
+        ax.plot_surface(xx, yy, z * 3.0, alpha = 0.2,  label = 'Liquid Surface')
         z_cpd = z * 3.3
         ax.plot_surface(xx, yy, z_cpd, alpha = 0.2, label = 'CPD Level' )
 
         # ax.legend()
-        if verbose: print(f'x: {particles_x}, y: {particles_y}, z: {particles_z}')
         paths = (particles_x, particles_y, particles_z)
     else:
         paths = (0,0,0)
