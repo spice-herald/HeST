@@ -44,7 +44,7 @@ def bottom_conditions(x, y, z):
 
 def liquid_surface(x, y, z):
     boundary_type = "Liquid"
-    height = 3.0 #cm
+    height = 1.0 #cm
     return (z < height), boundary_type
 
 def liquid_conditions(x, y, z):

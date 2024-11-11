@@ -5,6 +5,7 @@ import re
 import matplotlib.pyplot as plt
 from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, get_rplus_mom_energy
 from .HeST_Core import Singlet_PhotonEnergy
+from numba import jit
 
 class VCPD:
     def __init__(self, surface_condition, baselineNoise, phononConversion=0.25, bounced_flag = 0, positions = 0):
@@ -298,7 +299,6 @@ class VDetector:
     Detector geometry
 
     ############################################################################# '''
-
 def find_surface_intersection(start, direction, conditions):
     """Finds the surface intersection by calculating the path, and finding the point right before the first intersection point.
 
@@ -583,7 +583,6 @@ def random_conversion(energy, momentum, old_flavor, X, Y, Z, dx, dy, dz):
     r_nums[:,0][phonon_mask] = 0
     r_nums[:,1][rminus_mask] = 0
     r_nums[:,2][rplus_mask] = 0
-    print(r_nums)
     momentums = np.column_stack((phonon_mom, rminus_mom, rplus_mom))
     max_indices = np.argmax(r_nums, axis=1)  # Correct indexing along rows
     momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
@@ -620,12 +619,63 @@ def convert_off_XY(conserved_x, conserved_y, conserved_z, new_momentum, X, Y, Z,
     direction = new_total_mom_vec/np.linalg.norm(new_total_mom_vec, ord = 2)
     return direction[0], direction[1], direction[2]
 
+def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz):
+    """Handles the random flavor switching off a surface of surface type 'Z'
 
+    Args:
+        energy (array): This should be in units of KeV 
+        momentum (array): This should be in units of KeV/c, and it should have the same dimension as energy
+        old_flavor (_type_): Describes the flavor of each QP, and it has the same dimension as the energy array. 
+        dx (array): direction in x 
+        dy (array): direction in y
+        dz (array): Direction in Z
+
+    Returns:
+        _type_: _description_
+    """
+
+    r_nums = np.random.uniform(low = 0, high= 1, size = (len(energy), 3))
+    old_momentum = momentum
+    # decide on who goes where
+    phonon_mom = phonon_interp(energy * 1e3)
+    rminus_mom = rminus_interp(energy * 1e3)
+    rplus_mom = rplus_interp(energy * 1e3)
+    flavors = np.column_stack((np.full(np.shape(phonon_mom), r'phonon'), np.full(np.shape(phonon_mom), r'R-') , np.full(np.shape(phonon_mom), r'R+')))
     
+    cons_x = momentum * dx
+    cons_y = momentum * dy
+    # compute the conserved momentum, which is the momentum in this direction
+    conserved_mom_sq = (cons_x**2 + cons_y**2) 
+    phonon_mask = phonon_mom**2 < conserved_mom_sq 
+    rminus_mask = rminus_mom**2 < conserved_mom_sq
+    rplus_mask = rplus_mom**2 < conserved_mom_sq
+    # generate arrays of flavors
+    r_nums[:,0][phonon_mask] = 0
+    r_nums[:,1][rminus_mask] = 0
+    r_nums[:,2][rplus_mask] = 0 
+    momentums = np.column_stack((phonon_mom, -1 * rminus_mom, rplus_mom))
+    max_indices = np.argmax(r_nums, axis=1)  # Correct indexing along rows
+    momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
+    flavor = flavors[np.arange(len(energy)), max_indices]
+    no_change_mask = (flavor == old_flavor)
+    if len(dx[~no_change_mask]) >0: 
+        dx[~no_change_mask], dy[~no_change_mask], dz[~no_change_mask] = conserve_z(momentum[~no_change_mask], conserved_mom_sq[~no_change_mask], 
+                                                                                   cons_x[~no_change_mask], cons_y[~no_change_mask], dz[~no_change_mask])
+    return momentum, flavor, dx, dy, dz
 
-        
+@np.vectorize
+def conserve_z(momentum, conserved_mom, cons_x, cons_y, dz):
+    dz_prime = np.sqrt(momentum**2 - conserved_mom)
+    # pack them together
 
+    new_direction_vec = np.array([cons_x, cons_y, dz_prime])
+    new_direction_vec = new_direction_vec/momentum
+    # normalize
+    new_direction_vec = new_direction_vec/np.linalg.norm(new_direction_vec)
+    if new_direction_vec[2] < 0:
+        new_direction_vec[2] = -1 * new_direction_vec[2]
 
+    return new_direction_vec[0], new_direction_vec[1], new_direction_vec[2] 
 
 
 
@@ -815,13 +865,13 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             r = np.random.random(len(surface_type[living & check3]))
             cond = (r > reflection_prob)
             alive[living &check3] = np.where(cond, 0, alive[living & check3]) #kill of those that don't reflect
+            converting_range= (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
             # ~~~~~~~~~~~ First do case of reflection off XY.
             if list(a_xy_check).count(True) > 0:
                 dx[a_xy_check], dy[a_xy_check], dz[a_xy_check] = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
                                                 direction = (dx[a_xy_check], dy[a_xy_check], dz[a_xy_check]), 
                                                 diffuse_prob=diffuse_prob)
                 if flavor_switching:
-                    converting_range= (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
                     a_xy_switch_check = a_xy_check & converting_range
                     if list(a_xy_switch_check).count(True) > 0:
                         if verbose and debug: hold_flavor = flavor[a_xy_switch_check]
@@ -837,6 +887,13 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
                 dx[a_z_check], dy[a_z_check], dz[a_z_check] = diffuse_and_specular('Z', pos = (X1[a_z_check],Y1[a_z_check],Z1[a_z_check]), 
                                                 direction = (dx[a_z_check], dy[a_z_check], dz[a_z_check]), 
                                                 diffuse_prob=diffuse_prob)           
+                a_z_switch_check = a_z_check & converting_range
+                if list(a_z_switch_check).count(True) > 0:
+                    momentum[a_z_switch_check], flavor[a_z_switch_check], dx[a_z_switch_check], dy[a_z_switch_check], dz[a_z_switch_check] = random_conversion_off_z(old_flavor = flavor[a_z_switch_check], energy=energy[a_z_switch_check] * 1e3, 
+                                                                                                                                 momentum=momentum[a_z_switch_check], 
+                                                                                                                                dx = dx[a_z_switch_check], dy = dy[a_z_switch_check], dz = dz[a_z_switch_check])                    
+                    velocity[a_z_switch_check] = QP_velocity(np.abs(momentum[a_z_switch_check]))     
+
             X[living & check3] = X1[living &check3]
             Y[living & check3 ] = Y1[living &check3]
             Z[living & check3] = Z1[living &check3]
