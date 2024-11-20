@@ -51,7 +51,7 @@ class VCPD:
 
 
 class VDetector:
-    def __init__(self, surface_conditions, liquid_surface, liquid_conditions,
+    def __init__(self, bottom_conditions, wall_conditions, liquid_surface, liquid_conditions,
                  adsorption_gain, evaporation_eff, CPDs=[], LCEmap=0, LCEmap_positions=0., QPEmap=0, QPEmap_positions=0.,
                  photon_reflection_prob=0., QP_reflection_prob=0.):
         
@@ -90,7 +90,8 @@ class VDetector:
         QP_reflection_prob: probability that a QP reflects off of detector surfaces, between 0 and 1
         '''
         
-        self.surface_conditions = surface_conditions
+        self.bottom_condition   = bottom_conditions
+        self.wall_conditions    = wall_conditions
         self.liquid_surface     = liquid_surface
         self.liquid_conditions  = liquid_conditions
         self.CPDs               = CPDs
@@ -154,6 +155,10 @@ class VDetector:
         return self.liquid_surface
     def get_liquid_conditions(self):
         return self.liquid_conditions
+    def get_up_conditions(self):
+        return [self.liquid_surface, self.wall_conditions]
+    def get_down_conditions(self):
+        return [self.wall_conditions, self.bottom_condition]
     
     def get_LCEmap(self):
         return self.LCEmap
@@ -299,18 +304,7 @@ class VDetector:
     Detector geometry
 
     ############################################################################# '''
-def find_surface_intersection(start, direction, conditions):
-    """Finds the surface intersection by calculating the path, and finding the point right before the first intersection point.
-
-    Args:
-        start (_type_): _description_
-        direction (_type_): _description_
-        conditions (_type_): _description_
-
-    Returns:
-        _type_: _description_
-    """
-    print('~~~~~~~~~~~~~~~~ Finding Surface Intersection ~~~~~~~~~~~~~~~~~')
+def intersection(start, direction, conditions):
     if np.isscalar( start[0] ):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
@@ -335,13 +329,41 @@ def find_surface_intersection(start, direction, conditions):
         d = t[np.arange(t.shape[0]), first_ints]
         cond = ( d < dist ) & (first_ints > 0)
         dist = np.where(cond, d, dist)        
-       
         #get the coords of the first point *before* the interaction
         coords[0] = np.where(cond, x_line[np.arange(x_line.shape[0]), first_ints-1], coords[0])
         coords[1] = np.where(cond, y_line[np.arange(y_line.shape[0]), first_ints-1], coords[1])
         coords[2] = np.where(cond, z_line[np.arange(z_line.shape[0]), first_ints-1], coords[2])
         surface_type = np.where( cond, surface, surface_type )
     return np.array(coords[0], dtype = float), np.array(coords[1], dtype = float), np.array(coords[2], dtype= float), surface_type
+
+def find_surface_intersection(start, direction, up_conditions, down_conditions, alive):
+    """Finds the surface intersection by calculating the path, and finding the point right before the first intersection point.
+
+    Args:
+        start (_type_): _description_
+        direction (_type_): _description_
+        conditions (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    
+    # we need to apply a mask to these things, and then everything should work WONDERFULLY
+    up = (direction[2] >0 )
+    down = ~up 
+    up = (up & alive)
+    down = (down & alive)
+    surface_type = np.full(len(start[0]), None)
+    X1 = np.full(len(start[0]), None, dtype=float)
+    Y1 = np.full(len(start[0]), None, dtype=float)
+    Z1 = np.full(len(start[0]), None, dtype=float)
+    if any(up):
+        X1[up], Y1[up], Z1[up], surface_type[up] = intersection(start[:, up], direction[:, up], up_conditions)
+    if any(down):
+        X1[down], Y1[down], Z1[down], surface_type[down] = intersection(start[:, down], direction[:, down], down_conditions)
+    return X1, Y1, Z1, surface_type
+
+
 
 
 def diffuse_and_specular(surface, pos, direction, diffuse_prob):
@@ -401,6 +423,7 @@ def generate_random_direction_off_surface(surface, pos = (0.0,0.0,0.0)):
     if surface == 'XY':
         # ~~~~~~~~~~~ Doing this case by case, dx, dy, dz should already be cut to be alive and diffuse, and at an 'XY' surface
         phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(x)), np.random.uniform(-1., 1, size=len(x))
+        
         offset_angles_1 = np.arctan2(x, y)
         phi_1 += offset_angles_1
         theta_1 = np.arccos(arctheta_1)
@@ -588,7 +611,7 @@ def random_conversion(energy, momentum, old_flavor, X, Y, Z, dx, dy, dz):
     momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
     flavor = flavors[np.arange(len(energy)), max_indices]
     no_change_mask = (flavor == old_flavor)
-    if len(dx[~no_change_mask]) >0: 
+    if any(dx[~no_change_mask]): 
         dx[~no_change_mask], dy[~no_change_mask], dz[~no_change_mask]= convert_off_XY(cons_x[~no_change_mask],
                                                                     cons_y[~no_change_mask], cons_z[~no_change_mask], momentum[~no_change_mask],
                                                                     X[~no_change_mask], Y[~no_change_mask], Z[~no_change_mask], dx[~no_change_mask],
@@ -658,7 +681,7 @@ def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz):
     momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
     flavor = flavors[np.arange(len(energy)), max_indices]
     no_change_mask = (flavor == old_flavor)
-    if len(dx[~no_change_mask]) >0: 
+    if any(dx[~no_change_mask]): 
         dx[~no_change_mask], dy[~no_change_mask], dz[~no_change_mask] = conserve_z(momentum[~no_change_mask], conserved_mom_sq[~no_change_mask], 
                                                                                    cons_x[~no_change_mask], cons_y[~no_change_mask], dz[~no_change_mask])
     return momentum, flavor, dx, dy, dz
@@ -685,7 +708,7 @@ def conserve_z(momentum, conserved_mom, cons_x, cons_y, dz):
 Quasiparticle Propagation
 ##############################
 """
-def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
+def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -760,7 +783,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         #find a surface intersection
         if verbose: 
             print(f'starting point: {np.array([X, Y, Z])}, direction of travel: {np.array([dx, dy, dz])}')
-        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), conditions)
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living)
         if verbose: print(f'This is the surface type {surface_type}')
         #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
         hit_surface_check= (surface_type != None)
@@ -789,11 +812,11 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
         
         check1 = (surface_type == "Liquid")
         
+        alive_surface_check = living & check1
         #checking if it hit the surface of the liquid helium
-        if len(surface_type[check1]) > 0:
-            print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Evaporations ~~~~~~~~~~~~~~~~~~~~')
+        if any(alive_surface_check):
+            if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Evaporations ~~~~~~~~~~~~~~~~~~~~')
             # cut to discuss only the living qps that hit the surface of the helium
-            alive_surface_check = living & check1
             # print(np.shape(alive_surface_check))
             # ~~~~~~~~~~~~~ this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
             # evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
@@ -839,7 +862,7 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
                                             
         check2 = np.array(["CPD" in str(s) for s in surface_type])
         #print("Hit %i CPDs" % len(surface_type[check2]))
-        if list(living & check2).count(True)> 0:
+        if any(living & check2):
             if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
             cpd_id = np.empty_like(surface_type, dtype=int)
             for ii, surface in enumerate(surface_type):
@@ -855,7 +878,8 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             ids[cond] = cpd_id[cond] #store the CPD IDs for evaporated QPs that hit a CPD
             # ids[cond] = cpd_id[cond]
         check3 = (surface_type == 'XY') | (surface_type == 'Z') #doesn't reach liquid or CPD
-        if len(surface_type[check3]) > 0:
+        living_check3 = living & check3
+        if any(living_check3):
             if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Wall Reflections ~~~~~~~~~~~~~~~~~~~~')
             # Let's simplify this
             XY_check = (surface_type == 'XY')
@@ -867,13 +891,13 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
             alive[living &check3] = np.where(cond, 0, alive[living & check3]) #kill of those that don't reflect
             converting_range= (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
             # ~~~~~~~~~~~ First do case of reflection off XY.
-            if list(a_xy_check).count(True) > 0:
+            if any(a_xy_check):
                 dx[a_xy_check], dy[a_xy_check], dz[a_xy_check] = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
                                                 direction = (dx[a_xy_check], dy[a_xy_check], dz[a_xy_check]), 
                                                 diffuse_prob=diffuse_prob)
                 if flavor_switching:
                     a_xy_switch_check = a_xy_check & converting_range
-                    if list(a_xy_switch_check).count(True) > 0:
+                    if any(a_xy_switch_check):
                         if verbose and debug: hold_flavor = flavor[a_xy_switch_check]
                         momentum[a_xy_switch_check], flavor[a_xy_switch_check], dx[a_xy_switch_check], dy[a_xy_switch_check], dz[a_xy_switch_check] = random_conversion(old_flavor = flavor[a_xy_switch_check], energy=energy[a_xy_switch_check] * 1e6,
                                                                                                                                  momentum=momentum[a_xy_switch_check], 
@@ -883,12 +907,12 @@ def QP_propagation(nQPs, start, conditions, reflection_prob, evap_eff=1.0, diffu
                         if verbose and debug: print(f' old flavors: {hold_flavor} and new flavors  {flavor[a_xy_switch_check]}')
 
             # ~~~~~~~~~~~ Reflection off Z
-            if list(a_z_check).count(True) > 0:
+            if any(a_z_check):
                 dx[a_z_check], dy[a_z_check], dz[a_z_check] = diffuse_and_specular('Z', pos = (X1[a_z_check],Y1[a_z_check],Z1[a_z_check]), 
                                                 direction = (dx[a_z_check], dy[a_z_check], dz[a_z_check]), 
                                                 diffuse_prob=diffuse_prob)           
                 a_z_switch_check = a_z_check & converting_range
-                if list(a_z_switch_check).count(True) > 0:
+                if any(a_z_switch_check):
                     momentum[a_z_switch_check], flavor[a_z_switch_check], dx[a_z_switch_check], dy[a_z_switch_check], dz[a_z_switch_check] = random_conversion_off_z(old_flavor = flavor[a_z_switch_check], energy=energy[a_z_switch_check] * 1e3, 
                                                                                                                                  momentum=momentum[a_z_switch_check], 
                                                                                                                                 dx = dx[a_z_switch_check], dy = dy[a_z_switch_check], dz = dz[a_z_switch_check])                    
@@ -1097,19 +1121,23 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     bounce_flag_with_cpd = [[] for x in range(nCPDs)]
     flavor_with_cpd= [[] for x in range(nCPDs)]
     chAreas = [0.]*nCPDs
-    conditions = detector.get_surface_conditions()
-    conditions.append( detector.liquid_surface )
+
+    nCPDs = detector.get_nCPDs()
+    up_conditions = detector.get_up_conditions()
+
     for i in range(nCPDs):
-        conditions.append( (detector.get_CPD(i)).get_surface_condition() )
+        up_conditions.append( (detector.get_CPD(i)).get_surface_condition() )
+    down_conditions = detector.get_down_conditions()
+
         
-    hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor = QP_propagation(QPs, [X, Y, Z], conditions, detector.get_QP_reflection_prob(), 
+    hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor = QP_propagation(QPs, [X, Y, Z], up_conditions=up_conditions, down_conditions=down_conditions, reflection_prob=detector.get_QP_reflection_prob(), 
                                                                 evap_eff=detector.get_evaporation_eff(), T=T, diffuse_prob=detector.get_diffuse_prob(), 
                                                                 debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, 
                                                                 momentum_choice = momentum_choice, verbose=verbose, 
                                                                 flavor_switching=flavor_switching)
     bounce_nums = bounced_flag
-    print(len(bounced_flag))
-    print(len(hit))
+    # print(len(bounced_flag))
+    # print(len(hit))
     bounced_flag = bounced_flag[hit]
     coincidence = 0
     for i in range(nCPDs):

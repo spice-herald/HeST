@@ -59,5 +59,5 @@ def liquid_conditions(x, y, z):
     return ((x*x + y*y < radius*radius) & (z < height) & (z > bottom))
    
 
-Amherst_split_cpd = detection.VDetector([wall_conditions, bottom_conditions], liquid_surface=liquid_surface, liquid_conditions=liquid_conditions, CPDs=[cpd1, cpd2], adsorption_gain=6.0e-3, evaporation_eff=0.60)
+Amherst_split_cpd = detection.VDetector(wall_conditions=wall_conditions, bottom_conditions=bottom_conditions, liquid_surface=liquid_surface, liquid_conditions=liquid_conditions, CPDs=[cpd1, cpd2], adsorption_gain=6.0e-3, evaporation_eff=0.60)
  

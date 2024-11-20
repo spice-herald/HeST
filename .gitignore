@@ -3,6 +3,9 @@ py_env/
 bin/
 build/
 lib/
+plots/
+data/
+
 
 #That should mostly take care of the main thing
 *.egg-info/
