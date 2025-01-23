@@ -240,12 +240,12 @@ def QP_dispersion(p ):
         p (int): the momentum of the quasiparticle of interest 
         interp (funct): function to relate momentum and energy  
     """
-    interp = GetInterpFunc('./dispersion_data.csv')
+    interp = GetInterpFunc('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/dispersion_data.csv')
     energy = interp(p)
     return energy * 1e-3 #This is in eV 
 
 def QP_velocity(p ):
-    interp = GetInterpFunc('./velocity_data.csv')
+    interp = GetInterpFunc('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/velocity_data.csv')
     velocity = interp(p)
     return velocity  #This is in mm/s. Yes that is correct, milimeters per second.
 

@@ -5,9 +5,10 @@ build/
 lib/
 plots/
 data/
-
-
+testing_multi_processing.py
+config.py
 #That should mostly take care of the main thing
 *.egg-info/
 *.egg/
-HeSt/__pycache__/
+HeST/__pycache__/
+slurm*.out

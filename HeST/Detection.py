@@ -1,5 +1,4 @@
 from scipy.interpolate import interpn, interp1d
-from detprocess import Template
 import numpy as np
 import re
 import matplotlib.pyplot as plt
@@ -510,7 +509,6 @@ def evap_prob_of_p_theta(p, theta):
 def critical_angle(Energy, momentum, binding_energy = 0.00062e-3):
     m =  3.725472e6 #He mass in keV/c^2
     c = 2.998e8
-
     return np.arcsin(np.sqrt(2 * m * (Energy - binding_energy))/np.abs(momentum))
 
 
@@ -571,9 +569,9 @@ def compute_conserved_mom(X, Y, dx, dy, dz, momentum):
     return conserved_momentum[0], conserved_momentum[1], conserved_momentum[2]
 
 
-phonon_interp = get_phonon_mom_energy('./dispersion_data.csv')
-rminus_interp = get_rminus_mom_energy('./dispersion_data.csv')
-rplus_interp = get_rplus_mom_energy('./dispersion_data.csv')
+phonon_interp = get_phonon_mom_energy('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/dispersion_data.csv')
+rminus_interp = get_rminus_mom_energy('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/dispersion_data.csv')
+rplus_interp = get_rplus_mom_energy('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/dispersion_data.csv')
 def random_conversion(energy, momentum, old_flavor, X, Y, Z, dx, dy, dz):
     """ This function handles the conversion process, which is done by randomely choosing new momentums, that match the original. 
 
