@@ -1,18 +1,17 @@
 #! /usr/bin/env python
-import os
+import os, pickle, argparse
+
 import HeST as hest
-import HeST.Amherst_split_cpd_with_numba as examp
+import HeST.Amherst_detector_fill_15_mm as examp
 # import HeST.Amherst_split_cpd as examp_test
 import numpy as np
 import matplotlib.pyplot as plt
 import HeST.Detection as detection
+
 from numba import jit
 from scipy.interpolate import interp1d
-import argparse
-import pickle
 
 
-# first we need to create the detector object. 
 
 if __name__ == "__main__":
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -24,6 +23,7 @@ if __name__ == "__main__":
     parser.add_argument('--evap_eff', type=float, help = 'Evaporation Probability')
     parser.add_argument('--num_qps', type=int, help = 'Number of Quasiparticles')
     parser.add_argument('--file_path', required=True, type=str, help = 'File path of saved data')
+    parser.add_argument('--pos', type=tuple, help='Starting position of quasiparticles')
     args = parser.parse_args()
 
 
@@ -40,7 +40,8 @@ if __name__ == "__main__":
         evap_eff = args.evap_eff
     if args.num_qps:
         num_qps = args.num_qps
-       
+    if args.pos:
+        pos = args.pos
     file_path = args.file_path
     detector.set_QP_reflection_prob(refl_prob)
     detector.set_diffuse_prob(diff_prob)
@@ -54,10 +55,8 @@ if __name__ == "__main__":
     theta = np.random.uniform(0, 2 * np.pi, size=num_points)
     x = r * np.cos(theta)
     y = r * np.sin(theta)
-    z = np.random.uniform(0, 1.48, size=num_points)
-    pos = (0,0,.5)
-
-
+    z = np.random.uniform(0, .5, size=num_points)
+    pos = (0,0,0.15)
     
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     evap = hest.GetEvaporationSignal(detector, num_qps, *pos, useMap=False, verbose=False, flavor_switching=True)
@@ -68,10 +67,12 @@ if __name__ == "__main__":
 
     if not os.path.exists(os.path.join('/home/cveihmeyer_umass_edu/HeST/data', file_path)):
         config = {}
-        config['diff_prob'] = 0.8
-        config['refl_prob'] = 0.3
-        config['evap_eff'] = 0.6
-        config['num_qps'] = 10000
+        config['diff_prob'] = diff_prob
+        config['refl_prob'] = refl_prob
+        config['evap_eff'] = evap_eff
+        config['num_qps'] = num_qps
+        confi['pos'] = pos
+
         with open("config.txt", "w+") as file:
             for key, value in config.items():
                 file.write(f"{key}={value}\n")

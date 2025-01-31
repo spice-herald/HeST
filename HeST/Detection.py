@@ -52,7 +52,7 @@ class VCPD:
 class VDetector:
     def __init__(self, bottom_conditions, wall_conditions, liquid_surface, liquid_conditions,
                  adsorption_gain, evaporation_eff, CPDs=[], LCEmap=0, LCEmap_positions=0., QPEmap=0, QPEmap_positions=0.,
-                 photon_reflection_prob=0., QP_reflection_prob=0.):
+                 photon_reflection_prob=0., QP_reflection_prob=0., liquid_height = 'unsaved'):
         
         '''
         Create a Virtual Detector class.
@@ -102,6 +102,7 @@ class VDetector:
         self.QPEmap_positions   = QPEmap_positions
         self.photon_reflection_prob = photon_reflection_prob
         self.QP_reflection_prob = QP_reflection_prob
+        self.liquid_height = liquid_height
         
         
     
@@ -499,10 +500,11 @@ def evaporation(momentum, energy, velocity, direction):
     # once again, just a reminder that these should only be for the QP element after evaporation
     return dx, dy, dz, momentum
 
-def evap_prob_of_p_theta(p, theta):
+def evap_prob_of_p_theta(p, theta, evap_eff):
     # For now, we are just going to do a uniform distribution, but this is to build this later
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(theta))
-    return the_nums
+    no_evap_bools = (the_nums) > evap_eff
+    return no_evap_bools
 
     
 
@@ -706,7 +708,7 @@ def conserve_z(momentum, conserved_mom, cons_x, cons_y, dz):
 Quasiparticle Propagation
 ##############################
 """
-def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob, evap_eff=1.0, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
+def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob, evap_eff=0.6, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
     """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
    
     Args:
@@ -821,7 +823,8 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
             # calc critical angle
             critical_angles = critical_angle(energy, momentum) 
             incident_angles = np.arccos(dz)
-            no_evap = (incident_angles > critical_angles) & (evap_prob_of_p_theta(momentum, incident_angles) < 1.0)
+            evap_bools = evap_prob_of_p_theta(momentum, incident_angles, evap_eff)
+            no_evap = (incident_angles > critical_angles) | (evap_bools)
             a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
             if verbose:
                 print(f'this is critical angles {critical_angles} and this is incident {incident_angles}')
