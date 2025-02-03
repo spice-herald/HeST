@@ -502,15 +502,11 @@ def evaporation(momentum, energy, velocity, direction):
 
 def evap_prob_of_p_theta(p, theta, evap_eff):
     # For now, we are just going to do a uniform distribution, but this is to build this later
-    no_evap_bools = np.full_like(p,fill_value= False)
+    no_evap_bools = np.full_like(p,fill_value= False, dtype=bool)
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(p))
     bins = np.histogram_bin_edges(p, bins=len(evap_eff)-1)
     bin_indices = np.digitize(p, bins) - 1
-    print(the_nums)
     for ii in np.unique(bin_indices):
-        print(evap_eff[ii])
-        print(the_nums[ii==bin_indices])
-        print(the_nums[ii==bin_indices] > evap_eff[ii])
         no_evap_bools[ii==bin_indices] = the_nums[ii==bin_indices] > evap_eff[ii]
     return no_evap_bools
 

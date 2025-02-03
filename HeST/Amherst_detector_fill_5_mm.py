@@ -48,7 +48,6 @@ def bottom_conditions(x, y, z):
 @jit
 def liquid_surface(x, y, z):
     global height
-    print(height)
     boundary_type = "Liquid"
     return (z < height), boundary_type
 

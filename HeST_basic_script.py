@@ -2,7 +2,7 @@
 import os, pickle, argparse
 
 import HeST as hest
-import HeST.Amherst_detector_fill_15_mm as examp
+import HeST.Amherst_detector_fill_5_mm as examp
 # import HeST.Amherst_split_cpd as examp_test
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,7 +20,7 @@ if __name__ == "__main__":
     )
     parser.add_argument('--diff_prob', type=float, help = 'Diffuse Probability')
     parser.add_argument('--refl_prob', type=float, help = 'Reflection Probability')
-    parser.add_argument('--evap_eff', type=float, help = 'Evaporation Probability')
+    parser.add_argument('--evap_eff', type=str, help = 'Evaporation Probability')
     parser.add_argument('--num_qps', type=int, help = 'Number of Quasiparticles')
     parser.add_argument('--file_path', required=True, type=str, help = 'File path of saved data')
     parser.add_argument('--pos', type=tuple, help='Starting position of quasiparticles')
@@ -29,7 +29,7 @@ if __name__ == "__main__":
 
     diff_prob = 0.8
     refl_prob = 0.3
-    evap_eff = 0.6
+    evap_eff = [0.6, 0.3, 0.6]
     num_qps = 10000   
     detector = examp.Amherst_split_cpd
     if args.diff_prob:
@@ -37,7 +37,8 @@ if __name__ == "__main__":
     if args.refl_prob:
         refl_prob = args.refl_prob
     if args.evap_eff:
-        evap_eff = args.evap_eff
+        print(args.evap_eff)
+        evap_eff = np.fromstring(args.evap_eff[:-1], sep=',', dtype=float)
     if args.num_qps:
         num_qps = args.num_qps
     if args.pos:
@@ -55,24 +56,24 @@ if __name__ == "__main__":
     theta = np.random.uniform(0, 2 * np.pi, size=num_points)
     x = r * np.cos(theta)
     y = r * np.sin(theta)
-    z = np.random.uniform(0, .5, size=num_points)
-    pos = (0,0,0.15)
+    z = np.random.uniform(0, .45, size=num_points)
+    pos = (0,0,0.1)
     
     # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     evap = hest.GetEvaporationSignal(detector, num_qps, *pos, useMap=False, verbose=False, flavor_switching=True)
     # then we want to be able save this class
     # will use pickle to do this. Then we can write a post-processing script to move this into a separate file area. 
-    with open(os.path.join('/home/cveihmeyer_umass_edu/HeST/data', file_path), 'wb+') as f:
+    with open(file_path, 'wb+') as f:
         pickle.dump(evap, f)
 
-    if not os.path.exists(os.path.join('/home/cveihmeyer_umass_edu/HeST/data', file_path)):
+    if not os.path.exists(file_path):
         config = {}
         config['diff_prob'] = diff_prob
         config['refl_prob'] = refl_prob
         config['evap_eff'] = evap_eff
         config['num_qps'] = num_qps
         confi['pos'] = pos
-
-        with open("config.txt", "w+") as file:
+        task_id = os.getenv('SLURM_ARRAY_TASK_ID')
+        with open(f"config_{task_id}.txt", "w+") as file:
             for key, value in config.items():
                 file.write(f"{key}={value}\n")
