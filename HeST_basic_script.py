@@ -1,5 +1,5 @@
 #! /usr/bin/env python
-import os, pickle, argparse
+import os, pickle, argparse, pandas
 
 import HeST as hest
 import HeST.Amherst_detector_fill_5_mm as examp
@@ -28,7 +28,7 @@ if __name__ == "__main__":
 
 
     diff_prob = 0.8
-    refl_prob = 0.3
+    refl_prob = 0.2
     evap_eff = [0.6, 0.3, 0.6]
     num_qps = 10000   
     detector = examp.Amherst_split_cpd
@@ -37,7 +37,6 @@ if __name__ == "__main__":
     if args.refl_prob:
         refl_prob = args.refl_prob
     if args.evap_eff:
-        print(args.evap_eff)
         evap_eff = np.fromstring(args.evap_eff[:-1], sep=',', dtype=float)
     if args.num_qps:
         num_qps = args.num_qps
@@ -66,14 +65,17 @@ if __name__ == "__main__":
     with open(file_path, 'wb+') as f:
         pickle.dump(evap, f)
 
-    if not os.path.exists(file_path):
+    # need to think harder about how to manage this. split on the file name, and go to the last bit
+    listed_path = file_path.split('/')[:-1]
+    task_id = os.getenv('SLURM_ARRAY_TASK_ID')
+    listed_path.append(f'config_{task_id}.csv')
+    p = os.path.join(*listed_path)
+    if not os.path.exists(p):
         config = {}
         config['diff_prob'] = diff_prob
         config['refl_prob'] = refl_prob
         config['evap_eff'] = evap_eff
         config['num_qps'] = num_qps
-        confi['pos'] = pos
-        task_id = os.getenv('SLURM_ARRAY_TASK_ID')
-        with open(f"config_{task_id}.txt", "w+") as file:
-            for key, value in config.items():
-                file.write(f"{key}={value}\n")
+        config['pos'] = pos
+        df = pandas.DataFrame(config)
+        df.to_csv('/' + p, index=False)

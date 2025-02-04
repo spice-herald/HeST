@@ -12,4 +12,4 @@ config.py
 *.egg/
 HeST/__pycache__/
 slurm*.out
-paremters/
+parameters/*

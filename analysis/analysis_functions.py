@@ -1,6 +1,7 @@
 # this is just going to be a file to house the useful functions for analysis
 import matplotlib.pyplot as plt
 import numpy as np
+import pickle
 
 def plot_stacked_hist(evap, title=None):
     """ 
@@ -51,7 +52,6 @@ def plot_hist_flavors(evap, title=None):
     for i in range(2):
         for value in np.unique(fs[i]):
             mask = (fs[i] == value)
-            print(mask)
             axs[i].hist(evap.arrivalTimes_us[i][mask], bins = 200, range = [0,3000], alpha= 0.7,stacked=True, label = value)
             axs[i].set_title(f'CPD {i+1}')
             if title is not None:
@@ -91,3 +91,21 @@ def plot_waveform(evap, title=''):
 
     ax1.set_title('CPD1'+title)
     ax2.set_title('CPD2'+title)
+
+
+
+
+
+def extract_pulse(file_list):
+    heights = []
+    for ii, file in enumerate(file_list):
+        with open(file, 'rb') as f:
+            height = pickle.load(f)
+        
+        plot_stacked_hist(height, title=file_list[ii][-14:-4])
+        plot_hist_flavors(height,title=file_list[ii][-14:-4] )
+        cpd1 = height.arrivalTimes_us[0]
+        cpd2 = height.arrivalTimes_us[1]
+        heights.append(cpd1)
+        heights.append(cpd2)
+    return heights
