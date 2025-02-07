@@ -502,9 +502,8 @@ def evaporation(momentum, energy, velocity, direction):
 
 def evap_prob_of_p_theta(p, theta, evap_eff):
     # For now, we are just going to do a uniform distribution, but this is to build this later
-    no_evap_bools = np.full_like(p,fill_value= False, dtype=bool)
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(p))
-    no_evap_bools = the_nums > 0.6
+    no_evap_bools = the_nums > 1.0 
     # bins = np.histogram_bin_edges(p, bins=len(evap_eff), range = (0.9, 4.8))
     # bin_indices = np.digitize(p, bins) - 1
     # for ii in np.unique(bin_indices):
@@ -829,7 +828,19 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
             critical_angles = critical_angle(energy, momentum) 
             incident_angles = np.arccos(dz)
             evap_bools = evap_prob_of_p_theta(momentum, incident_angles, evap_eff)
-            no_evap = (incident_angles > critical_angles) | (evap_bools)
+            if verbose: 
+                print('This is evap bool')
+                print('\n')
+                print(evap_bools)
+                print(flavor)
+                rminius = flavor =='R-' 
+                rplus = flavor =='R+' 
+                phonon= flavor =='phonon' 
+            # print(list(rminius[alive_surface_check]).count(True))
+            # print(list(rplus[alive_surface_check]).count(True))
+            # print(list(phonon[alive_surface_check]).count(True))
+            angle_check = (incident_angles > critical_angles)
+            no_evap = angle_check | evap_bools
             a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
             if verbose:
                 print(f'this is critical angles {critical_angles} and this is incident {incident_angles}')
@@ -877,7 +888,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
             #print("nDeps", len(deposits[living_indices[check2]][cond]))
             # deposits[living & check2] = np.where( cond, energy[living & check2], deposits[living & check2])
             deposits[cond] = energy[cond] 
-            
+
             #going to store the CPD intersection point here for plotting purposes. 
 
             alive[cond] = np.zeros(len(alive[cond]), dtype=int) #kill off QPs, they've hit a CPD
