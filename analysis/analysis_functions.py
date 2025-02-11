@@ -1,9 +1,9 @@
 # this is just going to be a file to house the useful functions for analysis
 import matplotlib.pyplot as plt
 import numpy as np
-import pickle
+import pickle, re
 
-def plot_stacked_hist(evap, title=None):
+def plot_stacked_hist(evap, title=None, plot_one=False):
     """ 
     Function to plot histogram of cpd hits, organized by number of bounces
 
@@ -29,6 +29,8 @@ def plot_stacked_hist(evap, title=None):
         ax1.set_title(title + ' cpd1')
     ax1.set_xlabel('Time [us]')
     ax1.legend()
+    if plot_one:
+        return 1
     for ii, bounce_num in enumerate(cpd_2_ints):
         mask = evap.bounce_flag[1] -1 == bounce_num
         ax2.hist(cpd2_times[mask], bins = 200, range = [0.0, 3000.0],alpha = 0.9, label= 'cpd2, bounce = ' + str(bounce_num - 1) )
@@ -40,16 +42,18 @@ def plot_stacked_hist(evap, title=None):
 
 
 
-def plot_hist_flavors(evap, title=None):
+def plot_hist_flavors(evap, title=None, plot_one=False):
     """ Makes two subplots that use the number of bounces as labels
 
     Args:
         evap (evaporation class): The return object of a detector event. 
     """
     fs = evap.flavor
-    fs = evap.flavor
+    
     fig, axs = plt.subplots(1,2, figsize =(16, 4))
     for i in range(2):
+        if plot_one and i>0:
+            break
         for value in np.unique(fs[i]):
             mask = (fs[i] == value)
             axs[i].hist(evap.arrivalTimes_us[i][mask], bins = 200, range = [0,3000], alpha= 0.7,stacked=True, label = value)
@@ -96,16 +100,46 @@ def plot_waveform(evap, title=''):
 
 
 
-def extract_pulse(file_list):
+def extract_pulse(file_list, plot_one=False):
     heights = []
     for ii, file in enumerate(file_list):
         with open(file, 'rb') as f:
             height = pickle.load(f)
         
-        plot_stacked_hist(height, title=file_list[ii][-14:-4])
-        plot_hist_flavors(height,title=file_list[ii][-14:-4] )
+        plot_stacked_hist(height, title=file_list[ii][-14:-4], plot_one=plot_one)
+        plot_hist_flavors(height,title=file_list[ii][-14:-4] , plot_one=plot_one)
         cpd1 = height.arrivalTimes_us[0]
         cpd2 = height.arrivalTimes_us[1]
         heights.append(cpd1)
         heights.append(cpd2)
     return heights
+
+
+
+def extract_number(filename, prefix, delimiter):
+    match = re.search(rf"{prefix}_(\d+)\.{delimiter}", filename)
+    return int(match.group(1)) if match else None
+
+
+
+def get_file_map(config_list, trial_list):
+    """ maps all numbered trials to all number configs
+
+    Args:
+        config_list (_type_): _description_
+        trial_list (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+
+    # Create a dictionary mapping numbers to file paths
+    config_map = {extract_number(f, "config", 'csv'): f for f in config_list}
+    print(config_map)
+    trial_map = {extract_number(f, "trial", 'pkl'): f for f in trial_list}
+    print(trial_map)
+
+
+    # Match based on extracted numbers
+    matched_pairs = {num: (config_map.get(num), trial_map.get(num)) for num in set(config_map) & set(trial_map)}
+    return matched_pairs

@@ -309,7 +309,7 @@ def intersection(start, direction, conditions):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
         direction = np.array([np.array([p]) for p in direction])
-    t = np.array([np.linspace(0, 10, 250) for i in range(len(start[0]))])  # Parameter range for the line
+    t = np.array([np.linspace(0, 10, 500) for i in range(len(start[0]))])  # Parameter range for the line
     # Calculate the line coordinates
     x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
     y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
@@ -502,14 +502,15 @@ def evaporation(momentum, energy, velocity, direction):
 
 def evap_prob_of_p_theta(p, theta, evap_eff):
     # For now, we are just going to do a uniform distribution, but this is to build this later
+    no_evap_bools = np.full_like(p,fill_value= False, dtype=bool)
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(p))
-    no_evap_bools = the_nums > 1.0 
-    # bins = np.histogram_bin_edges(p, bins=len(evap_eff), range = (0.9, 4.8))
-    # bin_indices = np.digitize(p, bins) - 1
-    # for ii in np.unique(bin_indices):
-    #     no_evap_bools[ii==bin_indices] = the_nums[ii==bin_indices] > evap_eff[ii]
-    return no_evap_bools
+    bins = [0.2, 2.2, 3.3, 4.9]
+    bin_indices = np.digitize(p, bins) - 1 
 
+    # The way to think of this: np.digitize creates an array of bin indices, meaning that each point is assigned to a bin. 
+    for ii in np.unique(bin_indices):
+        no_evap_bools[ii==bin_indices] = the_nums[ii==bin_indices] > evap_eff[ii]
+    return no_evap_bools
     
 
 def critical_angle(Energy, momentum, binding_energy = 0.00062e-3):
