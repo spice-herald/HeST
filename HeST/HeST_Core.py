@@ -15,7 +15,7 @@ class QuantaResult:
         self.Quasiparticles = Quasiparticles
 
 class CPD_Signal:
-    def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]], bounced_flag = 0, num_bounces = 0, positions = 0, flavor = 'not_touched'):
+    def __init__(self, area_eV, chArea_eV, coincidence, arrivalTimes_us=[[]], bounced_flag = 0, num_bounces = 0, positions = 0, flavor = 'not_touched', momentums = 0, arrivals_unsorted= 0):
         if len(arrivalTimes_us) == 0:
             arrivalTimes_us = [[]]*len(chArea_eV)
         self.area_eV = area_eV #total pulse area
@@ -26,6 +26,8 @@ class CPD_Signal:
         self.num_bounces = num_bounces
         self.positions = positions
         self.flavor = flavor
+        self.momentum = momentums
+        self.arrivals_unsorted =  arrivals_unsorted
 
 # Polynomial functions to get the energy channel partitioning for ERs and NRs
 

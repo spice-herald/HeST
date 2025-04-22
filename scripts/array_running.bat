@@ -4,4 +4,4 @@
 INPUT_FILE=$(sed -n "${SLURM_ARRAY_TASK_ID}p" ./parameters/sample_1000.txt)
 module load conda/latest
 conda activate HeST
-./scripts/HeST_basic_script.py --num_qps=100000 --file_path="${INPUT_FILE}"
+./scripts/HeST_basic_script.py --num_qps=5000000 --file_path="${INPUT_FILE}" 

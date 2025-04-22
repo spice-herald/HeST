@@ -19,17 +19,13 @@ import pandas
 
 
 
-trial_list = glob.glob('/work/pi_shertel_umass_edu/quasiparticle_simulation/waveform_comparison/fit_waveform/trial_*.pkl')
-config_list = glob.glob('/work/pi_shertel_umass_edu/quasiparticle_simulation/waveform_comparison/fit_waveform/config_*.npy')
+trial_list = glob.glob('/work/pi_shertel_umass_edu/quasiparticle_simulation/waveform_comparison/further_zoom/trial_*.pkl')
+config_list = glob.glob('/work/pi_shertel_umass_edu/quasiparticle_simulation/waveform_comparison/further_zoom/config_*.npy')
 matched_pairs = get_file_map(config_list=config_list, trial_list=trial_list)
-template = np.load('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/shortened_template.npy')
-template_1 = template[2]
-template_2 = template[3]
-chi_squared = np.ones((16000), dtype=float)
+template_1 = np.load('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/extreme_deposition.npy')
+chi_squared = np.ones((149, 2), dtype=float)
 for num, (config, trial) in matched_pairs.items():
     print(num)
-    if num < 8000:
-        continue
     with open(trial, 'rb') as file:
         evap = pickle.load(file)
     s1, s2 , time =generate_waveform(evap)
@@ -42,7 +38,8 @@ for num, (config, trial) in matched_pairs.items():
     try:
 
         new_template = np.pad(template_1, (before_pad, after_pad), mode='constant', constant_values=0)  * peak
-        chi_squared[num] = np.sum((s1+1)**2 - (new_template+1)**2/(new_template+1))
+        chi_squared[num, 0] = np.sum((s1[:1600] - (new_template[:1600]))**2)
+        chi_squared[num, 1] = np.sum((s2[:1600] - (new_template[:1600]))**2)
     except:
         print(f"{num} failed while evaluating the new template")
-    np.save('/home/cveihmeyer_umass_edu/HeST/data/chi_squared_latter_half', chi_squared)
+    np.save('/home/cveihmeyer_umass_edu/HeST/data/further_zoom.npy', chi_squared)

@@ -50,7 +50,8 @@ def plot_hist_flavors(evap, title=None, plot_one=False):
     """
     fs = evap.flavor
     
-    fig, axs = plt.subplots(1,2, figsize =(16, 4))
+    fig, axs = plt.subplots(1,2, figsize =(14, 6))
+    fig.suptitle('Arrival Times, sorted by Flavor')
     for i in range(2):
         if plot_one and i>0:
             break
@@ -61,6 +62,8 @@ def plot_hist_flavors(evap, title=None, plot_one=False):
             if title is not None:
                 axs[i].set_title(f'{title} CPD {i+1}' )
             axs[i].legend()
+            axs[i].set_xlabel("Time [mS]" )
+            axs[i].set_ylabel("Counts" )
     
             
 def generate_waveform(evap):
@@ -76,7 +79,7 @@ def generate_waveform(evap):
     """
     cpd1_arrival = evap.arrivalTimes_us[0]
     cpd2_arrival = evap.arrivalTimes_us[1]
-    template = np.load('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/shortened_template.npy')
+    template = np.load('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/shortened_normalized_template.npy')
     template_1 = template[0]
     template_2 = template[1]
     cpd1_hits = np.histogram(cpd1_arrival, bins=12500, range=(0,5000))[0] * 10e-3
@@ -134,10 +137,8 @@ def get_file_map(config_list, trial_list):
     """
 
     # Create a dictionary mapping numbers to file paths
-    config_map = {extract_number(f, "config", 'csv'): f for f in config_list}
-    print(config_map)
+    config_map = {extract_number(f, "config", 'npy'): f for f in config_list}
     trial_map = {extract_number(f, "trial", 'pkl'): f for f in trial_list}
-    print(trial_map)
 
 
     # Match based on extracted numbers

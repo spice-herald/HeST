@@ -43,7 +43,6 @@ class VCPD:
         return self.phononConversion
     def get_bounces(self):
         return self.bounce_flag
-
     def check_surface(self, x, y, z):
         return self.surface_condition(x, y, z)
 
@@ -504,9 +503,8 @@ def evap_prob_of_p_theta(p, theta, evap_eff):
     # For now, we are just going to do a uniform distribution, but this is to build this later
     no_evap_bools = np.full_like(p,fill_value= False, dtype=bool)
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(p))
-    bins = [0.2, 2.2, 3.3, 4.9]
+    bins = [0.0, 1.1, 1.7, 2.2, 3.78, 4.5, 5.2]
     bin_indices = np.digitize(p, bins) - 1 
-
     # The way to think of this: np.digitize creates an array of bin indices, meaning that each point is assigned to a bin. 
     for ii in np.unique(bin_indices):
         no_evap_bools[ii==bin_indices] = the_nums[ii==bin_indices] > evap_eff[ii]
@@ -559,10 +557,11 @@ def assign_flavors(p):
     elif 2.22538 < p < 3.7899:
         flavor = 'R-'
     elif 3.840<p < 4.555:
-
         flavor = 'R+'
-    else:
+    elif 4.555 < p:
         flavor = 'high energy Roton'
+    else:
+        flavor = 'slow moving'
     return flavor
 
 # ~~~~~~~~~~~~ Flavor Switching Functions ~~~~~~~~~~~~~~~
@@ -753,10 +752,11 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
     n=0
     #This draws from a k**2 distribution, essentially trying to follow the density of states
     momentum = Random_QPmomentum(nQPs) #keV/c
+    print(momentum)
+    initial_momentum=np.array(momentum)
     if choose_momentum:
         momentum = np.full(nQPs, momentum_choice)
-
-    flavor = assign_flavors(momentum)
+    flavor = assign_flavors(np.abs(momentum))
     #prepare the alive tracker, and then cut out those which we can't sense
     alive = np.ones(nQPs, dtype=int)
     cond = momentum <  1.1
@@ -781,6 +781,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
         particles_y[:, 0][living] = Y[living]
         particles_z[:, 0][living] = Z[living]
     while sum(alive) > 0:
+        
         n+=1
         #prepare an array for the living ones (alive is bool so this is really just not 0)
         living = ( alive > 0.5 )
@@ -794,7 +795,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
         hit_surface_check= (surface_type != None)
         # print(list(hit_surface_check).count(False))
         # we are just setting these things to 0. Hopefully this doesn't destroy our efficiency
-        X[~hit_surface_check], Y[~hit_surface_check], Z[~hit_surface_check] = np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check])   
+        # X[~hit_surface_check], Y[~hit_surface_check], Z[~hit_surface_check] = np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check])   
         dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
         
 
@@ -828,12 +829,15 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
             # calc critical angle
             critical_angles = critical_angle(energy, momentum) 
             incident_angles = np.arccos(dz)
-            evap_bools = evap_prob_of_p_theta(momentum, incident_angles, evap_eff)
+            evap_bools = evap_prob_of_p_theta(np.abs(momentum), incident_angles, evap_eff)
             if verbose: 
                 print('This is evap bool')
                 print('\n')
                 print(evap_bools)
+                print('\n')
+                print('This is flavors')
                 print(flavor)
+                print(flavor_switching)
                 rminius = flavor =='R-' 
                 rplus = flavor =='R+' 
                 phonon= flavor =='phonon' 
@@ -882,6 +886,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
         #print("Hit %i CPDs" % len(surface_type[check2]))
         if any(living & check2):
             if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
+            R_plus_mask = flavor =='R+'
             cpd_id = np.empty_like(surface_type, dtype=int)
             for ii, surface in enumerate(surface_type):
                 cpd_id[ii] = extract_number(surface)
@@ -894,7 +899,12 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
 
             alive[cond] = np.zeros(len(alive[cond]), dtype=int) #kill off QPs, they've hit a CPD
             ids[cond] = cpd_id[cond] #store the CPD IDs for evaporated QPs that hit a CPD
+            X[cond] = X1[cond]
+            Y[cond] = Y1[cond]
+            Z[cond] = Z1[cond]
             # ids[cond] = cpd_id[cond]
+
+
         check3 = (surface_type == 'XY') | (surface_type == 'Z') #doesn't reach liquid or CPD
         living_check3 = living & check3
         if any(living_check3):
@@ -930,11 +940,12 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
                                                 direction = (dx[a_z_check], dy[a_z_check], dz[a_z_check]), 
                                                 diffuse_prob=diffuse_prob)           
                 a_z_switch_check = a_z_check & converting_range
-                if any(a_z_switch_check):
-                    momentum[a_z_switch_check], flavor[a_z_switch_check], dx[a_z_switch_check], dy[a_z_switch_check], dz[a_z_switch_check] = random_conversion_off_z(old_flavor = flavor[a_z_switch_check], energy=energy[a_z_switch_check] * 1e3, 
-                                                                                                                                 momentum=momentum[a_z_switch_check], 
-                                                                                                                                dx = dx[a_z_switch_check], dy = dy[a_z_switch_check], dz = dz[a_z_switch_check])                    
-                    velocity[a_z_switch_check] = QP_velocity(np.abs(momentum[a_z_switch_check]))     
+                if flavor_switching:
+                    if any(a_z_switch_check):
+                        momentum[a_z_switch_check], flavor[a_z_switch_check], dx[a_z_switch_check], dy[a_z_switch_check], dz[a_z_switch_check] = random_conversion_off_z(old_flavor = flavor[a_z_switch_check], energy=energy[a_z_switch_check] * 1e3, 
+                                                                                                                                    momentum=momentum[a_z_switch_check], 
+                                                                                                                                    dx = dx[a_z_switch_check], dy = dy[a_z_switch_check], dz = dz[a_z_switch_check])                    
+                        velocity[a_z_switch_check] = QP_velocity(np.abs(momentum[a_z_switch_check]))     
 
             X[living & check3] = X1[living &check3]
             Y[living & check3 ] = Y1[living &check3]
@@ -971,10 +982,11 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
         # ax.legend()
         paths = (particles_x, particles_y, particles_z)
     else:
-        paths = (0,0,0)
+        paths = np.column_stack((X,Y,Z))
     hit = (deposits > 0.)
     if verbose: print(deposits[hit], total_time[hit])
-    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths, flavor[hit]
+    print(initial_momentum)
+    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths[hit], flavor[hit], initial_momentum[hit]
         
 def photon_propagation(nPhotons, start, conditions, reflection_prob):
         
@@ -1117,7 +1129,7 @@ def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
     return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
 
 
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True, save_hits_and_paths= False):
     '''
     Attempt to simulate the CPD response for quasiparticles.
 
@@ -1148,16 +1160,20 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     down_conditions = detector.get_down_conditions()
 
         
-    hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor = QP_propagation(QPs, [X, Y, Z], up_conditions=up_conditions, down_conditions=down_conditions, reflection_prob=detector.get_QP_reflection_prob(), 
+    hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor, momentum = QP_propagation(QPs, [X, Y, Z], up_conditions=up_conditions, down_conditions=down_conditions, reflection_prob=detector.get_QP_reflection_prob(), 
                                                                 evap_eff=detector.get_evaporation_eff(), T=T, diffuse_prob=detector.get_diffuse_prob(), 
                                                                 debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, 
                                                                 momentum_choice = momentum_choice, verbose=verbose, 
                                                                 flavor_switching=flavor_switching)
+    if save_hits_and_paths:
+        return hits, arrival_times, paths 
+
     bounce_nums = bounced_flag
     # print(len(bounced_flag))
     # print(len(hit))
     bounced_flag = bounced_flag[hit]
     coincidence = 0
+    momentum_hit = [[]] * 2
     for i in range(nCPDs):
         cond = (cpd_ids == i)
         chAreas[i] = sum(hits[cond] + detector.get_adsorption_gain()) # eV
@@ -1169,8 +1185,9 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
         arrivalTimes[i] = arrival_times[cond]
         bounce_flag_with_cpd[i] = bounced_flag[cond]
         flavor_with_cpd[i] = flavor[cond]
+        momentum_hit[i] = momentum[cond] 
 
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums, positions = paths, flavor=flavor_with_cpd)
+    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums, positions = paths, flavor=flavor_with_cpd, momentums = momentum_hit, arrivals_unsorted = arrival_times)
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
