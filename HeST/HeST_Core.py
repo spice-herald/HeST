@@ -239,7 +239,7 @@ def QP_dispersion(p ):
     """generate the energy of the particle in meV
 
     Args:
-        p (int): the momentum of the quasiparticle of interest 
+        p (float): the momentum of the quasiparticle of interest 
         interp (funct): function to relate momentum and energy  
     """
     interp = GetInterpFunc('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/dispersion_data.csv')
@@ -249,7 +249,7 @@ def QP_dispersion(p ):
 def QP_velocity(p ):
     interp = GetInterpFunc('/home/cveihmeyer_umass_edu/HeST/data/dispersion_curves/velocity_data.csv')
     velocity = interp(p)
-    return velocity  #This is in mm/s. Yes that is correct, milimeters per second.
+    return velocity  # This is in meters per second (fucking duh)
 
 
 def getMaxY_Temp(T):

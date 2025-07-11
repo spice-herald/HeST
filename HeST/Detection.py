@@ -503,7 +503,7 @@ def evap_prob_of_p_theta(p, theta, evap_eff):
     # For now, we are just going to do a uniform distribution, but this is to build this later
     no_evap_bools = np.full_like(p,fill_value= False, dtype=bool)
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(p))
-    bins = [0.0, 1.1, 1.7, 2.2, 3.78, 4.5, 5.2]
+    bins = [0.0, 1.1, 1.7, 2.2, 3.834, 4.5, 5.2]
     bin_indices = np.digitize(p, bins) - 1 
     # The way to think of this: np.digitize creates an array of bin indices, meaning that each point is assigned to a bin. 
     for ii in np.unique(bin_indices):
@@ -646,7 +646,7 @@ def convert_off_XY(conserved_x, conserved_y, conserved_z, new_momentum, X, Y, Z,
     direction = new_total_mom_vec/np.linalg.norm(new_total_mom_vec, ord = 2)
     return direction[0], direction[1], direction[2]
 
-def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz):
+def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz, verbose = False, debug = False):
     """Handles the random flavor switching off a surface of surface type 'Z'
 
     Args:
@@ -660,7 +660,6 @@ def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz):
     Returns:
         _type_: _description_
     """
-
     r_nums = np.random.uniform(low = 0, high= 1, size = (len(energy), 3))
     old_momentum = momentum
     # decide on who goes where
@@ -671,7 +670,7 @@ def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz):
     
     cons_x = momentum * dx
     cons_y = momentum * dy
-    # compute the conserved momentum, which is the momentum in this direction
+    # compute the conserved momentum, which is the x,y momentum in this direction
     conserved_mom_sq = (cons_x**2 + cons_y**2) 
     phonon_mask = phonon_mom**2 < conserved_mom_sq 
     rminus_mask = rminus_mom**2 < conserved_mom_sq
@@ -685,9 +684,23 @@ def random_conversion_off_z(energy, momentum, old_flavor, dx, dy, dz):
     momentum = momentums[np.arange(len(energy)), max_indices]  # Select momenta for each energy
     flavor = flavors[np.arange(len(energy)), max_indices]
     no_change_mask = (flavor == old_flavor)
-    if any(dx[~no_change_mask]): 
+    if any(~no_change_mask): 
         dx[~no_change_mask], dy[~no_change_mask], dz[~no_change_mask] = conserve_z(momentum[~no_change_mask], conserved_mom_sq[~no_change_mask], 
-                                                                                   cons_x[~no_change_mask], cons_y[~no_change_mask], dz[~no_change_mask])
+                                                                                   dx[~no_change_mask], dy[~no_change_mask], dx[~no_change_mask])
+
+    if verbose and debug:
+        print('conserved momentum:')
+        print(conserved_mom_sq)
+        print('masks')
+        print(phonon_mask, rminus_mask, rplus_mask)    
+        print('momentums')
+        print(momentums)
+        print('random numbers')
+        print(r_nums)
+        print('final flavor and masks')
+        print(flavor, no_change_mask)
+        print('final direction vector')
+        print(dx, dy, dz)
     return momentum, flavor, dx, dy, dz
 
 @np.vectorize
@@ -752,8 +765,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
     n=0
     #This draws from a k**2 distribution, essentially trying to follow the density of states
     momentum = Random_QPmomentum(nQPs) #keV/c
-    print(momentum)
-    initial_momentum=np.array(momentum)
+    initial_momentum=np.copy(momentum)
     if choose_momentum:
         momentum = np.full(nQPs, momentum_choice)
     flavor = assign_flavors(np.abs(momentum))
@@ -932,7 +944,9 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
                                                                                                                                  X = X1[a_xy_switch_check],Y = Y1[a_xy_switch_check],Z  = Z1[a_xy_switch_check], 
                                                                                                                                 dx = dx[a_xy_switch_check], dy = dy[a_xy_switch_check], dz = dz[a_xy_switch_check])
                         velocity[a_xy_switch_check] = QP_velocity(np.abs(momentum[a_xy_switch_check]))
-                        if verbose and debug: print(f' old flavors: {hold_flavor} and new flavors  {flavor[a_xy_switch_check]}')
+                        if verbose and debug: 
+                            print(f' old flavors: {hold_flavor} and new flavors  {flavor[a_xy_switch_check]}')
+                            print(f' travel direction after flavor switching {np.array([dx, dy, dz])}')
 
             # ~~~~~~~~~~~ Reflection off Z
             if any(a_z_check):
@@ -942,10 +956,14 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
                 a_z_switch_check = a_z_check & converting_range
                 if flavor_switching:
                     if any(a_z_switch_check):
+                        if verbose and debug: hold_flavor = flavor[a_z_switch_check]
                         momentum[a_z_switch_check], flavor[a_z_switch_check], dx[a_z_switch_check], dy[a_z_switch_check], dz[a_z_switch_check] = random_conversion_off_z(old_flavor = flavor[a_z_switch_check], energy=energy[a_z_switch_check] * 1e3, 
                                                                                                                                     momentum=momentum[a_z_switch_check], 
                                                                                                                                     dx = dx[a_z_switch_check], dy = dy[a_z_switch_check], dz = dz[a_z_switch_check])                    
                         velocity[a_z_switch_check] = QP_velocity(np.abs(momentum[a_z_switch_check]))     
+                        if verbose and debug: 
+                            print(f' old flavors: {hold_flavor} and new flavors  {flavor[a_z_switch_check]}')
+                            print(f' travel direction after flavor switching {np.array([dx, dy, dz])}')
 
             X[living & check3] = X1[living &check3]
             Y[living & check3 ] = Y1[living &check3]
@@ -971,12 +989,12 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
             x = radius *np.cos(theta)
             y = radius * np.sin(theta)
             return x,y
-        x,y= walls(100, 3.)
+        x,y= walls(100, 3.5)
         ax.plot(x,y)
         xx, yy = np.meshgrid(np.linspace(-3.0, 3.0, 50), np.linspace(-3.0, 3.0, 50))
         z = np.ones_like(xx) 
-        ax.plot_surface(xx, yy, z * 3.0, alpha = 0.2,  label = 'Liquid Surface')
-        z_cpd = z * 3.3
+        ax.plot_surface(xx, yy, z * 6, alpha = 0.2,  label = 'Liquid Surface')
+        z_cpd = z * 6.1
         ax.plot_surface(xx, yy, z_cpd, alpha = 0.2, label = 'CPD Level' )
 
         # ax.legend()
@@ -984,9 +1002,11 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
     else:
         paths = np.column_stack((X,Y,Z))
     hit = (deposits > 0.)
+    print(f'This is the hit {hit}')
     if verbose: print(deposits[hit], total_time[hit])
-    print(initial_momentum)
-    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths[hit], flavor[hit], initial_momentum[hit]
+
+
+    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths, flavor[hit], initial_momentum[hit]
         
 def photon_propagation(nPhotons, start, conditions, reflection_prob):
         

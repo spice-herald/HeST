@@ -9,8 +9,10 @@ data/ch1*
 data/sample_1000
 data/slurm_practice.pkl
 data/chi_*
+analysis/*
 testing_multi_processing.py
 *.png
+*.gif
 config.py
 #That should mostly take care of the main thing
 *.egg-info/

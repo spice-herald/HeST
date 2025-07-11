@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle, re
 
-def plot_stacked_hist(evap, title=None, plot_one=False):
+def plot_stacked_hist(evap, title=None, plot_one=False, x_range= [0, 3000]):
     """ 
     Function to plot histogram of cpd hits, organized by number of bounces
 
@@ -23,7 +23,7 @@ def plot_stacked_hist(evap, title=None, plot_one=False):
     fig, (ax1, ax2) = plt.subplots(1,2,figsize =(16, 4))
     for ii, bounce_num in enumerate(cpd_1_ints):
         mask = evap.bounce_flag[0] -1 == bounce_num 
-        ax1.hist(cpd1_times[mask],bins = 200, range = [0,3000], alpha= 0.9, label = 'cpd1, bounce = ' + str(bounce_num - 1))
+        ax1.hist(cpd1_times[mask],bins = bin_number, range = x_range, alpha= 0.9, label = 'cpd1, bounce = ' + str(bounce_num - 1))
     ax1.set_title('Arrival times, with bounce')
     if title is not None:
         ax1.set_title(title + ' cpd1')
@@ -33,7 +33,7 @@ def plot_stacked_hist(evap, title=None, plot_one=False):
         return 1
     for ii, bounce_num in enumerate(cpd_2_ints):
         mask = evap.bounce_flag[1] -1 == bounce_num
-        ax2.hist(cpd2_times[mask], bins = 200, range = [0.0, 3000.0],alpha = 0.9, label= 'cpd2, bounce = ' + str(bounce_num - 1) )
+        ax2.hist(cpd2_times[mask], bins = bin_number, range = x_range, alpha = 0.9, label= 'cpd2, bounce = ' + str(bounce_num - 1) )
     ax2.set_title('Arrival Times, with bounce')
     ax2.set_xlabel('Time [us]')
     if title is not None:
@@ -42,7 +42,7 @@ def plot_stacked_hist(evap, title=None, plot_one=False):
 
 
 
-def plot_hist_flavors(evap, title=None, plot_one=False):
+def plot_hist_flavors(evap, title=None, plot_one=False, x_range= [0, 3000], bin_number = 200):
     """ Makes two subplots that use the number of bounces as labels
 
     Args:
@@ -57,12 +57,12 @@ def plot_hist_flavors(evap, title=None, plot_one=False):
             break
         for value in np.unique(fs[i]):
             mask = (fs[i] == value)
-            axs[i].hist(evap.arrivalTimes_us[i][mask], bins = 200, range = [0,3000], alpha= 0.7,stacked=True, label = value)
+            axs[i].hist(evap.arrivalTimes_us[i][mask], bins = bin_number, range = x_range, alpha= 0.7,stacked=True, label = value)
             axs[i].set_title(f'CPD {i+1}')
             if title is not None:
                 axs[i].set_title(f'{title} CPD {i+1}' )
             axs[i].legend()
-            axs[i].set_xlabel("Time [mS]" )
+            axs[i].set_xlabel("Time [uS]" )
             axs[i].set_ylabel("Counts" )
     
             
