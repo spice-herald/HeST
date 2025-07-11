@@ -12,6 +12,7 @@ data/chi_*
 analysis/*
 testing_multi_processing.py
 *.png
+data_to_be_shared/*
 *.gif
 data/Double_pulse_amps.npy
 data/Double_pulse_wfs.npy
