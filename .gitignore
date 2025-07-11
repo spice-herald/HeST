@@ -13,6 +13,10 @@ analysis/*
 testing_multi_processing.py
 *.png
 *.gif
+data/Double_pulse_amps.npy
+data/Double_pulse_wfs.npy
+data/further_zoom.npy
+
 config.py
 #That should mostly take care of the main thing
 *.egg-info/
