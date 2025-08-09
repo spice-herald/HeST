@@ -1002,7 +1002,6 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
     else:
         paths = np.column_stack((X,Y,Z))
     hit = (deposits > 0.)
-    print(f'This is the hit {hit}')
     if verbose: print(deposits[hit], total_time[hit])
 
 

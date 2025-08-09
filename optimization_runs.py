@@ -64,11 +64,11 @@ if __name__ == "__main__":
     num_points=1
     rng = np.random.default_rng()
 
-    r = rng.power(2, size=num_points) * 2.9
+    r = rng.power(2, size=num_points) * 3.4
     theta = np.random.uniform(0, 2 * np.pi, size=num_points)
     x = r * np.cos(theta)
     y = r * np.sin(theta)
-    z = np.random.uniform(0, .23, size=num_points)
+    z = np.random.uniform(0, 5.8, size=num_points)
     pos = (x,y,z)
     if args.pos != None:
         pos = np.fromstring(args.pos[:-1], sep=',', dtype=float)

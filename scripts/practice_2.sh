@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=1
 #SBATCH --mem=64G

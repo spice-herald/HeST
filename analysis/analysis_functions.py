@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle, re
 
-def plot_stacked_hist(evap, title=None, plot_one=False, x_range= [0, 3000]):
+def plot_stacked_hist(evap, title=None, plot_one=False, x_range= [0, 3000], bin_number = 1000):
     """ 
     Function to plot histogram of cpd hits, organized by number of bounces
 
