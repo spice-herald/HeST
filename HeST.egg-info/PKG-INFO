@@ -5,3 +5,4 @@ License-File: LICENSE
 Requires-Dist: numpy
 Requires-Dist: scipy
 Requires-Dist: detprocess
+Requires-Dist: numba
