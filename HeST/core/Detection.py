@@ -8,19 +8,29 @@ from numba import jit
 import os
 
 class VCPD:
+    """
+    This class is a "virtual CPD: (cryogenic phonon detector). It contains information regarding a single detector's geometry and functionality.
+
+    Attributes
+    ----------
+    surface_condition : function 
+        a function that takes in an (x,y,z) position in cm and returns 
+        true outside the photodetector volume and false inside it. 
+        (A quasiparticle is said to be detected once it travels from a
+        True region in to a False one).
+    baselineNoise : list
+        A list of the form [mean, width] describing the CPD's noise 
+        (FIXME: this will be changed to a PSD in power space)
+    phononConversion : float
+        The phonon collection efficiency of the sensor. (Fraction of 
+        energy deposited into the Si that makes it into the TES).
+    bounced_flag : bool
+        FIXME: this currently does nothing 
+    positions : ????
+        FIXME: thiss currently does nothing
+
+    """
     def __init__(self, surface_condition, baselineNoise, phononConversion=0.25, bounced_flag = 0, positions = 0):
-        '''
-        Create a Virtual CPD class to keep track of individual CPDs
-        and add them to the VDetector object.
-
-        Args:
-        surface_condition: a function that tracks where photon/QP paths are obstructed by
-                          the CPD surface. Returns (True, "CPD") if the photon is unobstructed;
-                          Returns (False, "CPD") if the photon path hits the CPD surface.
-        baselineNoise: [mean, width] of the CPDs baseline noise
-        phononConversion=0.25: fraction of photon energy that creates a phonon signal in the CPD
-
-        '''
 
         self.surface_condition = surface_condition
         self.baselineNoise     = np.array( baselineNoise )
@@ -50,44 +60,75 @@ class VCPD:
 
 
 class VDetector:
+    """
+    This class is a "virtual Detector". It contains all of the geometric 
+    and (custom) physics that will be going on in our detector. (Here "detector"
+    refers to HeRALD as a whole, potentially comprising many individual CPDs)
+
+    Attributes
+    ----------
+    bottom_conditions : function 
+        a function that takes in an (x,y,z) position in cm and returns 
+        true before a QP has struck the bottom surface and False when
+        the the QP has pased through the bottom surface 
+    wall_conditions : function 
+        a function that takes in an (x,y,z) position in cm and returns 
+        true before a QP has struck the lateral face and False when
+        the the QP has passed through the lateral face 
+    liquid_surface : function
+        a function that takes in an (x,y,z) position in cm and returns 
+        true when a QP is below the lHe level and false when 
+        the QP has crossed into the vacuum
+    liquid_conditions : function
+        a function that takes in an (x,y,z) position in cm and returns 
+        true when a QP is inside the lHe and false when 
+        the QP has left the lHe volume 
+        (FIXME: Why is this necessary when we already have liquid_surface)
+    adsorption_gain : float 
+        The net energy gain that a He atom recieves during the evaporation
+        from the liquid surface and adsorption onto the detector in eV. Must 
+        include energy necessary to liberate the atom from the liquid surface.
+    evaporation_eff : float
+        Probability of a kinematically sufficient QP striking the surface to 
+        evaporate a helium atom
+        (FIXME: Eventually this is something we'll want as a function of momentum)
+        (FIXME: After measurement, we'll want this defined in a LUT and not by 
+        the user)
+    CPDs : list
+        List of the VCPD objects you wish to add to your detector.
+    LCEmap : array
+        3-dimensional array with float-like elements. Each element describes 
+        the probability of a photon at a given position being detected. 
+        (FIXME: doesn't this need to be a 4d array if we have > 1 CPD?)
+        (FIXME: is the probability of detection or of striking a CPD?)
+    LCEmap_positions : 3-tuple
+        3-tuple of 1-D arrays (X Y Z) that correspond to the grid of points (in cm)
+        that LCEmap measures light collection at
+    QPEmap : array
+        3-dimensional array with float-like elements. Each element describes 
+        the probability of a phonon at a given position evaporating an atom that is 
+        detected. 
+        (FIXME: doesn't this need to be a 4d array if we have > 1 CPD?)
+        (FIXME: is the probability of detection or of striking a CPD?)
+    QPEmap_positions : 3-tuple
+        3-tuple of 1-D arrays (X Y Z) that correspond to the grid of points (in cm)
+        that QPEmap measures phonon collection at   
+    photon_reflection_prob : float
+        probability of a CPD reflecting a photon
+        (FIXME: do we need separate reflection probs for IR and UV?)
+    QP_reflection_prob : float
+        probability of a CPD reflecting an atom
+        (FIXME: do I have this right? Seems like it's zero....)
+    liquid_height : string
+        (FIXME: no idea what this does)
+
+    """
+
     def __init__(self, bottom_conditions, wall_conditions, liquid_surface, liquid_conditions,
                  adsorption_gain, evaporation_eff, CPDs=[], LCEmap=0, LCEmap_positions=0., QPEmap=0, QPEmap_positions=0.,
                  photon_reflection_prob=0., QP_reflection_prob=0., liquid_height = 'unsaved'):
         
-        '''
-        Create a Virtual Detector class.
-        
-        Args:
-        surface_conditions: a list of functions that tracks where photon/QP paths are obstructed by 
-                            the Detector surfaces. Each function returns (True, *SurfaceType) if the photon is unobstructed; 
-                            Returns (False, *surfaceType) if the photon path hits the detector surface.
-                            *SurfaceType is a way of tracking what type of boundary this is: e.g. "X", "Y", "Z", or "XY", making it 
-                            easy to track how the particle may reflect off of that boundary
-                            
-        liquid_surface:     A function that tracks where the liquid surface is, similar to the surface conditions above. This is used in QP propagation/evaporation calculations.
-                            The surfaceType here must be "Liquid"
-        liquid_conditions:  A function returning true if the X,Y,Z position is inside the LHe volume, and False if outside the volume
 
-        CPDs:               A list of VCPD objects to keep track of
-        
-        adsorption_gain:    Added energy from adsorption of evaporated QPs, per QP, in eV
-        
-        self.evaporation_eff:  Flat efficiency factor on QP evaporation, between 0 and 1
-        
-        LCEmap:             A 3D array tracking positions with mean photon collection probability, dimensionality (M x N x L)
-        
-        LCEmap_positions:   A set of three 1-D arrays (x, y, z) to associate the LCE map entries in (M x N x L) discrete bins to individual x,y,z coordinates.
-                            If loading a premade map, these must match what was used for that map's generator. 
-        
-        QPEmap:             A 3D array tracking position with mean QP evaporation probability. Different from LCEmap due to liquid surface physics
-        
-        QPEmap_positions:   A set of three 1-D arrays (x, y, z) to associate the QPE map entries in (M x N x L) discrete bins to individual x,y,z coordinates. 
-                            If loading a premade map, these must match what was used for that map's generator. The dimensionality of the QP map doesn't need to
-                            match the dimensionality of the LCE map.
-                            
-        photon_reflection_prob: probability that a photon reflects off of detector surfaces, between 0 and 1
-        QP_reflection_prob: probability that a QP reflects off of detector surfaces, between 0 and 1
-        '''
         
         self.bottom_condition   = bottom_conditions
         self.wall_conditions    = wall_conditions
@@ -106,17 +147,18 @@ class VDetector:
         
         
     
-        
+    """
+    Setters
+    """   
+
     def set_surface_conditions(self, f1):
         self.surface_conditions = list(f1)
     def add_surface_condition(self, f1):
-        self.surface_conditions.append( f1 )
-        
+        self.surface_conditions.append( f1 ) 
     def set_CPDs(self, p1):
         self.CPDs = list(p1)
     def add_CPD(self, p1):
-        self.CPDs.append( p1 )
-        
+        self.CPDs.append( p1 ) 
     def set_liquid_surface(self, f1):
         self.liquid_surface = f1
     def set_liquid_conditions(self, f1):
@@ -125,30 +167,27 @@ class VDetector:
         self.adsorption_gain = p1
     def set_evaporation_eff( self, p1 ):
         self.evaporation_eff = p1
-        
-        
-    def load_LCEmap(self, filename):
-        self.LCEmap = np.load(filename)
     def set_LCEmap_positions(self, p1):
         if len(p1) == 3:
             self.LCEmap_positions = p1
         else: 
             print("This function requires a list of 3 individual 1-D arrays to associate the LCE map with X,Y,Z coordinates")
-    def load_QPEmap(self, filename):
-        self.QPEmap = np.load(filename)
     def set_QPEmap_positions(self, p1):
         if len(p1) == 3:
             self.QPEmap_positions = p1
         else: 
             print("This function requires a list of 3 individual 1-D arrays to associate the QP evaporation map with X,Y,Z coordinates")
-    
     def set_photon_reflection_prob(self, p1):
         self.photon_reflection_prob = p1
     def set_QP_reflection_prob(self, p1):
         self.QP_reflection_prob = p1
     def set_diffuse_prob(self, p1):
         self.diffuse_prob = p1
-        
+
+
+    """
+    Getters
+    """
     def get_surface_conditions(self):
         return list(self.surface_conditions)
     def get_liquid_surface(self):
@@ -159,34 +198,24 @@ class VDetector:
         return [self.liquid_surface, self.wall_conditions]
     def get_down_conditions(self):
         return [self.wall_conditions, self.bottom_condition]
-    
     def get_LCEmap(self):
         return self.LCEmap
-    
     def get_LCEmap_positions(self):
         return self.LCEmap_positions
-    
     def get_QPEmap(self):
         return self.LCEmap_positions
-    
     def get_QPEmap_positions(self):
-        return self.QPEmap_positions
-        
-        
-        
+        return self.QPEmap_positions  
     def get_nCPDs(self):
         return len(self.CPDs)
-    
     def get_CPD(self, index):
         return self.CPDs[index]
-    
     def get_liquid_surface( self ):
         return self.liquid_surface
     def get_adsorption_gain(self):
         return self.adsorption_gain
     def get_evaporation_eff(self):
         return self.evaporation_eff
-    
     def get_photon_reflection_prob(self):
         return self.photon_reflection_prob
     def get_QP_reflection_prob(self):
@@ -194,8 +223,32 @@ class VDetector:
     def get_diffuse_prob(self):
         return self.diffuse_prob
     
-    
+
+    def load_LCEmap(self, filename):
+        self.LCEmap = np.load(filename)
+
+    def load_QPEmap(self, filename):
+        self.QPEmap = np.load(filename)
+
     def create_LCEmap(self, x_array, y_array, z_array, nPhotons=10000, filestring="detector_LCEmap"):
+        """
+        Takes in an x/y/z grid and simulates a large number of
+        photons at each one to simulate to get some detection probabilty
+
+        Parameters
+        ----------
+        x-array : array
+            Array of x positions (in cm) at which to simulate quasiparticles 
+        y-array : array
+            Array of y positions (in cm) at which to simulate quasiparticles 
+        z-array : array
+            Array of z positions (in cm) at which to simulate quasiparticles 
+        nPhotons : int
+            Number of quasiparticles to simulate at each point
+        filestring : string
+            Name for the collection efficiency map.
+
+        """
         print("Creating LCE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_LCEmap_positions( [x, y, z] )
@@ -236,6 +289,21 @@ class VDetector:
         
         
     def get_photon_hits(self, X, Y, Z):
+        """
+        Return the probability of a photon generated at a particular point,
+        interpolated from the pre-made LCE map
+
+        Parameters
+        ----------
+        X,Y,Z : floats
+            Position in cm
+
+        Returns
+        -------
+        probability : float
+            Interpolated probabilty of detection
+
+        """
         if type(self.LCEmap) == int:
             print("No LCE Map Loaded!")
             return -999
@@ -247,6 +315,27 @@ class VDetector:
         return interpn((x, y, z), self.LCEmap, [X, Y, Z])[0]
     
     def create_QPEmap(self, x_array, y_array, z_array, nQPs=10000, filestring="detector_QPEmap", T=2.):
+        """
+        Takes in an x/y/z grid and simulates a large number of
+        quasiparticles at each one to simulate to get some detection probabilty
+
+        Parameters
+        ----------
+        x-array : array
+            Array of x positions (in cm) at which to simulate quasiparticles 
+        y-array : array
+            Array of y positions (in cm) at which to simulate quasiparticles 
+        z-array : array
+            Array of z positions (in cm) at which to simulate quasiparticles 
+        nQPs : int
+            Number of quasiparticles to simulate at each point
+        filestring : string
+            Name for the collection efficiency map.
+        T : float
+            Nominal Boltzman distribution from which we'll sample quasiparticles
+            (FIXME: I think Charlie has us sample purely based on density of states)
+
+        """
         print("Creating QPE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_QPEmap_positions( [x, y, z] )
@@ -285,6 +374,24 @@ class VDetector:
         print("Saved map to %s.npy" % filestring)
     
     def get_QP_hits(self, X, Y, Z):
+
+        """
+        Return the probability of a QP generated at a particular point,
+        interpolated from the pre-made LCE map (FIXME: eventually
+        this will need to be momentum-dependent)
+
+        Parameters
+        ----------
+        X,Y,Z : floats
+            Position in cm
+
+        Returns
+        -------
+        probability : float
+            Interpolated probabilty of detection
+
+        """
+
         if type(self.QPEmap) == int:
             print("No QPE Map Loaded!")
             return -999
@@ -304,7 +411,26 @@ class VDetector:
     Detector geometry
 
     ############################################################################# '''
+
+
 def intersection(start, direction, conditions):
+    """
+    Takes in a starting position and direction and projects forward
+    to find the position at which a boundary defined by one of the 
+    condition functions is crossed 
+    
+    Parameters (FIXME: figure out if this function is supposed to take in vector-valued initial conditions, or just a handles a single point at a time)
+    ----------
+    start : 
+
+    direction :
+
+    conditions : list
+        list of boolean-valued functions of 3-d space.  
+
+
+
+    """
     if np.isscalar( start[0] ):
         start = np.array([np.array([p]) for p in start])
     if np.isscalar( direction[0] ):
@@ -367,17 +493,31 @@ def find_surface_intersection(start, direction, up_conditions, down_conditions, 
 
 
 def diffuse_and_specular(surface, pos, direction, diffuse_prob):
-    """To calculate the diffuse and specular reflections. You specify a surface, and it works directly off the cases presented there. 
+    """
+    Takes in initial conditions of a particle before striking a surface 
+    and returns direction directly after reflection. Assumes some probabilty 
+    of of diffuse reflection at the wall/floor surfaces
+    (FIXME: Is this for QP or photon or both?)
 
+    Parameters
+    ----------
+        surface : string
+            String denoting the surface type; 'Liquid', 'XY', or 'Z'
+        pos : 3-tuple
+            3-tuple containing the x/y/z position of the reflection
+        direction : 3-tuple
+            3-tuple correspodning to the inital velocity vector's direction
+        diffuse_prob : float
+            Probability of a QP reflecting diffusely on the wall/floor
+            (FIXME: check that this isn't passed to photons too? There's 
+            no reason to think diffuse probality would be the same )
 
-    Args:
-        surface (_type_): _description_
-        pos (_type_): _description_
-        direction (_type_): _description_
-        diffuse_prob (_type_): _description_
+    Returns
+    -------
+        dx,dy, dz : 3-tuple
+            3-tuple correspodning to the velocity vector's direction 
+            post-reflection
 
-    Returns:
-        _type_: _description_
     """
     x = pos[0]
     y = pos[1]
@@ -446,15 +586,19 @@ def generate_random_direction_off_surface(surface, pos = (0.0,0.0,0.0)):
 
 def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta):
     """
-    This function generates a random direction for a large number of quasiparticles, where that random direction is within ranges. See arguments for details.
-    Phi is normally distributed from the two bounds, and theta is normally distributed across the inverse. 
+    Generates a random direction for a large number of quasiparticles, where that random direction is within ranges.
 
     Args:
-        nQPs (int): The number of quasiparticles being generated 
-        bottom_phi (Float): the bottom bound of the phi angle, which is the azimuthal angle. 
-        top_phi (float): the top bound of the phi angle, which is the azimuthal angle
-        bottom_theta (float): bottom bound of the inverse of theta, must be between (-1, 1)
-        top_theta (_type_): upper bound of the inverse of theta, must be between (-1, 1)
+        nQPs : int
+            The number of quasiparticles being generated 
+        bottom_phi : float
+            Lower bound of the phi angle, which is the azimuthal angle. 
+        top_phi : float 
+            Upper bound of the phi angle, which is the azimuthal angle
+        bottom_theta : float
+            Lower bound of the inverse of theta, must be between (-1, 1)
+        top_theta : float
+            Upper bound of the inverse of theta, must be between (-1, 1)
 
     Returns:
         tuple: the unit vector in cartesian coordinateds, broken up into arrays of X, Y, Z, each of length nQPs. 
