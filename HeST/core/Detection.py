@@ -188,6 +188,7 @@ class VDetector:
     """
     Getters
     """
+
     def get_surface_conditions(self):
         return list(self.surface_conditions)
     def get_liquid_surface(self):
@@ -223,6 +224,7 @@ class VDetector:
     def get_diffuse_prob(self):
         return self.diffuse_prob
     
+
 
     def load_LCEmap(self, filename):
         self.LCEmap = np.load(filename)
@@ -374,7 +376,6 @@ class VDetector:
         print("Saved map to %s.npy" % filestring)
     
     def get_QP_hits(self, X, Y, Z):
-
         """
         Return the probability of a QP generated at a particular point,
         interpolated from the pre-made LCE map (FIXME: eventually
@@ -472,6 +473,7 @@ def find_surface_intersection(start, direction, up_conditions, down_conditions, 
 
     Returns:
         _type_: _description_
+    (FIXME: Update this when you figure out the above function)
     """
     
     # we need to apply a mask to these things, and then everything should work WONDERFULLY
@@ -588,7 +590,8 @@ def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta
     """
     Generates a random direction for a large number of quasiparticles, where that random direction is within ranges.
 
-    Args:
+    Paremeters
+    ----------
         nQPs : int
             The number of quasiparticles being generated 
         bottom_phi : float
@@ -600,8 +603,9 @@ def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta
         top_theta : float
             Upper bound of the inverse of theta, must be between (-1, 1)
 
-    Returns:
-        tuple: the unit vector in cartesian coordinateds, broken up into arrays of X, Y, Z, each of length nQPs. 
+    Returns
+    -------
+        tuple: the unit vector in cartesian coordinates, broken up into arrays of X, Y, Z, each of length nQPs. 
     """
     phi, arctheta = np.random.uniform(bottom_phi, top_phi, size=nQPs), np.random.uniform(bottom_theta, top_theta, size=nQPs)
     theta = np.arccos(arctheta)
