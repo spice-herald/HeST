@@ -2,14 +2,16 @@ from scipy.interpolate import interpn, interp1d
 import numpy as np
 import re
 import matplotlib.pyplot as plt
-from .HeST_Core import CPD_Signal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, get_rplus_mom_energy
+from .HeST_Core import HestSignal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, get_rplus_mom_energy
 from .HeST_Core import Singlet_PhotonEnergy
 from numba import jit
 import os
+from skimage import measure
+from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
-class VCPD:
+class VSensor:
     """
-    This class is a "virtual CPD: (cryogenic phonon detector). It contains information regarding a single detector's geometry and functionality.
+    This class is a "virtual sensor". It contains information regarding a single detector's geometry and functionality.
 
     Attributes
     ----------
@@ -18,42 +20,36 @@ class VCPD:
         true outside the photodetector volume and false inside it. 
         (A quasiparticle is said to be detected once it travels from a
         True region in to a False one).
-    baselineNoise : list
-        A list of the form [mean, width] describing the CPD's noise 
-        (FIXME: this will be changed to a PSD in power space)
-    phononConversion : float
+    phononCollectionEfficiency : float
         The phonon collection efficiency of the sensor. (Fraction of 
         energy deposited into the Si that makes it into the TES).
-    bounced_flag : bool
-        FIXME: this currently does nothing 
-    positions : ????
-        FIXME: thiss currently does nothing
 
     """
-    def __init__(self, surface_condition, baselineNoise, phononConversion=0.25, bounced_flag = 0, positions = 0):
+    def __init__(self, surface_condition, baselineNoise, phononCollectionEfficiency=0.25, adsorptionGain = 6.0e-3):
 
         self.surface_condition = surface_condition
         self.baselineNoise     = np.array( baselineNoise )
-        self.phononConversion  = phononConversion
-        self.bounce_flag       = bounced_flag
-        self.positions = positions
+        self.phononCollectionEfficiency  = phononCollectionEfficiency
+        self.adsoprtionGain = adsorptionGain
 
 
     def set_surface_condition(self, f1):
         self.surface_condition = f1
     def set_baselineNoise(self, p1):
         self.baselineNoise = np.array( p1 )
-    def set_phononConversion(self, p1):
-        self.phononConversion = p1
+    def set_phononCollectionEfficiency(self, p1):
+        self.phononCollectionEfficiency = p1
+    def set_adsorptionGain(self, p1):
+        self.adsoprtionGain = p1
 
     def get_surface_condition(self):
         return self.surface_condition
     def get_baselineNoise(self):
         return self.baselineNoise
-    def get_phononConversion(self):
-        return self.phononConversion
-    def get_bounces(self):
-        return self.bounce_flag
+    def get_phononCollectionEfficiency(self):
+        return self.phononCollectionEfficiency
+    def get_adsorptionGain(self):
+        return self.adsoprtionGain
     def check_surface(self, x, y, z):
         return self.surface_condition(x, y, z)
 
@@ -63,10 +59,14 @@ class VDetector:
     """
     This class is a "virtual Detector". It contains all of the geometric 
     and (custom) physics that will be going on in our detector. (Here "detector"
-    refers to HeRALD as a whole, potentially comprising many individual CPDs)
+    refers to HeRALD as a whole, potentially comprising many individual sensor)
 
     Attributes
     ----------
+    top_conditions : function
+        a function that takes in an (x,y,z) position in cm and returns 
+        true before a QP has struck the top surface and False when
+        the the QP has pased through the top surface 
     bottom_conditions : function 
         a function that takes in an (x,y,z) position in cm and returns 
         true before a QP has struck the bottom surface and False when
@@ -83,24 +83,17 @@ class VDetector:
         a function that takes in an (x,y,z) position in cm and returns 
         true when a QP is inside the lHe and false when 
         the QP has left the lHe volume 
-        (FIXME: Why is this necessary when we already have liquid_surface)
-    adsorption_gain : float 
-        The net energy gain that a He atom recieves during the evaporation
-        from the liquid surface and adsorption onto the detector in eV. Must 
-        include energy necessary to liberate the atom from the liquid surface.
-    evaporation_eff : float
-        Probability of a kinematically sufficient QP striking the surface to 
-        evaporate a helium atom
-        (FIXME: Eventually this is something we'll want as a function of momentum)
+    evaporation_eff : array
+        length-7 array defining the probability of each QP population evaporating atoms
         (FIXME: After measurement, we'll want this defined in a LUT and not by 
         the user)
-    CPDs : list
-        List of the VCPD objects you wish to add to your detector.
+    sensors : list
+        List of the VSensor objects you wish to add to your detector.
     LCEmap : array
         3-dimensional array with float-like elements. Each element describes 
         the probability of a photon at a given position being detected. 
-        (FIXME: doesn't this need to be a 4d array if we have > 1 CPD?)
-        (FIXME: is the probability of detection or of striking a CPD?)
+        (FIXME: doesn't this need to be a 4d array if we have > 1 sensor?)
+        (FIXME: is the probability of detection or of striking a sensor?)
     LCEmap_positions : 3-tuple
         3-tuple of 1-D arrays (X Y Z) that correspond to the grid of points (in cm)
         that LCEmap measures light collection at
@@ -108,34 +101,34 @@ class VDetector:
         3-dimensional array with float-like elements. Each element describes 
         the probability of a phonon at a given position evaporating an atom that is 
         detected. 
-        (FIXME: doesn't this need to be a 4d array if we have > 1 CPD?)
-        (FIXME: is the probability of detection or of striking a CPD?)
+        (FIXME: doesn't this need to be a 4d array if we have > 1 sensor?)
+        (FIXME: is the probability of detection or of striking a sensor?)
     QPEmap_positions : 3-tuple
         3-tuple of 1-D arrays (X Y Z) that correspond to the grid of points (in cm)
         that QPEmap measures phonon collection at   
     photon_reflection_prob : float
-        probability of a CPD reflecting a photon
+        probability of a sensor reflecting a photon
         (FIXME: do we need separate reflection probs for IR and UV?)
     QP_reflection_prob : float
-        probability of a CPD reflecting an atom
-        (FIXME: do I have this right? Seems like it's zero....)
-    liquid_height : string
-        (FIXME: no idea what this does)
+        probability of the top/bottom/wall reflecting a quasiparticle
+    QP_diffuse_prob : float
+        probability of quasiparticles reflecting diffusley at a wall
+
 
     """
 
-    def __init__(self, bottom_conditions, wall_conditions, liquid_surface, liquid_conditions,
-                 adsorption_gain, evaporation_eff, CPDs=[], LCEmap=0, LCEmap_positions=0., QPEmap=0, QPEmap_positions=0.,
-                 photon_reflection_prob=0., QP_reflection_prob=0., liquid_height = 'unsaved'):
+    def __init__(self, top_conditions, bottom_conditions, wall_conditions, liquid_surface, liquid_conditions,
+                 evaporation_eff = np.array([1,1,1,1,1,1,1]), sensors=[], LCEmap=0, LCEmap_positions=0., QPEmap=0, QPEmap_positions=0.,
+                 photon_reflection_prob=0., QP_reflection_prob=0.,QP_diffuse_prob=0.):
         
 
         
+        self.top_condition     = top_conditions
         self.bottom_condition   = bottom_conditions
         self.wall_conditions    = wall_conditions
         self.liquid_surface     = liquid_surface
         self.liquid_conditions  = liquid_conditions
-        self.CPDs               = CPDs
-        self.adsorption_gain    = adsorption_gain #eV
+        self.sensors               = sensors
         self.evaporation_eff    = evaporation_eff
         self.LCEmap             = LCEmap
         self.LCEmap_positions   = LCEmap_positions
@@ -143,10 +136,9 @@ class VDetector:
         self.QPEmap_positions   = QPEmap_positions
         self.photon_reflection_prob = photon_reflection_prob
         self.QP_reflection_prob = QP_reflection_prob
-        self.liquid_height = liquid_height
+        self.diffuse_prob = QP_diffuse_prob
         
         
-    
     """
     Setters
     """   
@@ -155,16 +147,14 @@ class VDetector:
         self.surface_conditions = list(f1)
     def add_surface_condition(self, f1):
         self.surface_conditions.append( f1 ) 
-    def set_CPDs(self, p1):
-        self.CPDs = list(p1)
-    def add_CPD(self, p1):
-        self.CPDs.append( p1 ) 
+    def set_sensors(self, p1):
+        self.sensors = list(p1)
+    def add_sensors(self, p1):
+        self.sensors.append( p1 ) 
     def set_liquid_surface(self, f1):
         self.liquid_surface = f1
     def set_liquid_conditions(self, f1):
         self.liquid_conditions = f1
-    def set_adsorption_gain( self, p1 ):
-        self.adsorption_gain = p1
     def set_evaporation_eff( self, p1 ):
         self.evaporation_eff = p1
     def set_LCEmap_positions(self, p1):
@@ -196,7 +186,7 @@ class VDetector:
     def get_liquid_conditions(self):
         return self.liquid_conditions
     def get_up_conditions(self):
-        return [self.liquid_surface, self.wall_conditions]
+        return [self.liquid_surface, self.wall_conditions, self.top_condition]
     def get_down_conditions(self):
         return [self.wall_conditions, self.bottom_condition]
     def get_LCEmap(self):
@@ -207,14 +197,12 @@ class VDetector:
         return self.LCEmap_positions
     def get_QPEmap_positions(self):
         return self.QPEmap_positions  
-    def get_nCPDs(self):
-        return len(self.CPDs)
-    def get_CPD(self, index):
-        return self.CPDs[index]
+    def get_nsensors(self):
+        return len(self.sensors)
+    def get_sensor(self, index):
+        return self.sensors[index]
     def get_liquid_surface( self ):
         return self.liquid_surface
-    def get_adsorption_gain(self):
-        return self.adsorption_gain
     def get_evaporation_eff(self):
         return self.evaporation_eff
     def get_photon_reflection_prob(self):
@@ -254,11 +242,11 @@ class VDetector:
         print("Creating LCE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_LCEmap_positions( [x, y, z] )
-        nCPDs = self.get_nCPDs()
-        m = np.zeros((len(x), len(y), len(z), nCPDs), dtype=float)
+        nsensors = self.get_nsensors()
+        m = np.zeros((len(x), len(y), len(z), nsensors), dtype=float)
         conditions = self.get_surface_conditions()
-        for i in range(nCPDs):
-            conditions.append( (self.get_CPD(i)).get_surface_condition() )
+        for i in range(nsensors):
+            conditions.append( (self.get_sensor(i)).get_surface_condition() )
         
         refl_prob = self.get_photon_reflection_prob()
         for xx in range(len(x)):
@@ -269,12 +257,12 @@ class VDetector:
                     pos = np.array([x[xx], y[yy], z[zz]])
                     if (self.get_liquid_conditions())(*pos) == False:
                         continue
-                    hitProbs = [0.]*nCPDs
+                    hitProbs = [0.]*nsensors
                     for n in range(nPhotons):
                     
-                        hit, arrival_time, n, xs, ys, zs, cpd_id = photon_propagation(pos, conditions, refl_prob)
+                        hit, arrival_time, n, xs, ys, zs, sensor_id = photon_propagation(pos, conditions, refl_prob)
                         if hit > 0:
-                            hitProbs[cpd_id] += 1.
+                            hitProbs[sensor_id] += 1.
                         
                         
                                 
@@ -288,8 +276,6 @@ class VDetector:
         print("Saved map to %s.npy" % filestring)
         
     
-        
-        
     def get_photon_hits(self, X, Y, Z):
         """
         Return the probability of a photon generated at a particular point,
@@ -334,19 +320,18 @@ class VDetector:
         filestring : string
             Name for the collection efficiency map.
         T : float
-            Nominal Boltzman distribution from which we'll sample quasiparticles
-            (FIXME: I think Charlie has us sample purely based on density of states)
+            Bose-Einstein distribution from which we'll sample quasiparticles
 
         """
         print("Creating QPE map for this detector geometry...")
         x, y, z = np.array(x_array), np.array(y_array), np.array(z_array)
         self.set_QPEmap_positions( [x, y, z] )
-        nCPDs = self.get_nCPDs()
-        m = np.zeros((len(x), len(y), len(z), nCPDs), dtype=float)
+        nsensors = self.get_nsensors()
+        m = np.zeros((len(x), len(y), len(z), nsensors), dtype=float)
         conditions = self.get_surface_conditions()
         conditions.append( self.liquid_surface )
-        for i in range(nCPDs):
-            conditions.append( (self.get_CPD(i)).get_surface_condition() )
+        for i in range(nsensors):
+            conditions.append( (self.get_sensor(i)).get_surface_condition() )
         
         refl_prob = self.get_QP_reflection_prob()
         for xx in range(len(x)):
@@ -357,13 +342,11 @@ class VDetector:
                     pos = np.array([x[xx], y[yy], z[zz]])
                     if (self.get_liquid_conditions())(*pos) == False:
                         continue
-                    hitProbs = [0.]*nCPDs
+                    hitProbs = [0.]*nsensors
                     for n in range(nQPs):
-
-                        hits, times, cpd_ids = QP_propagation(nQPs, pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T, debug=True)
-                        print(cpd_ids)
+                        hits, times, sensor_ids = QP_propagation(nQPs, pos, conditions, refl_prob, evap_eff=self.evaporation_eff, T=T, debug=True)
                         if len(hits) > 0:
-                            hitProbs[cpd_ids] += 1.
+                            hitProbs[sensor_ids] += 1.
                         
                                 
                     hitProbs = np.array(hitProbs)/nQPs
@@ -403,6 +386,85 @@ class VDetector:
         z = positions[2]
         return interpn((x, y, z), self.QPEmap, [X, Y, Z])[0]
 
+    def Plot_detector(self, xgrid, ygrid, zgrid, sensor_color = 'darkgreen', Cu_color = 'darkorange', He_color = 'aqua', sensor_alpha = 1, Cu_alpha = .1, He_alpha = .3):
+        """
+        Plot a 3d image of the detector including photodetectors, boundaries, and helium. 
+        Uses the marching cubes algorithm to make a mesh for each volume.
+        This can take a bit to run; around a minute for 300^3 points and HeRALD v1
+
+        Parameters
+        ----------
+        xgrid, ygrid, zgrid : array
+            Grid of x, y, z points from which to derive our mesh.
+            Step size should be smaller than smallest scale of volume
+            (usually thickness of sensors)
+        sensor_color, Cu_color, He_color : color
+            Colors with which to draw the sensor, copper walls, and helium
+
+        sensor_alpha, Cu_alpha, He_alpha : float
+            Opacity with which to draw the sensor, copper walls, and helium
+
+        Returns
+        -------
+        fig : figure
+        ax : axes
+        """
+
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
+        ax.set_xlim(-6,6)
+        ax.set_ylim(-6,6)
+        ax.set_zlim(-6,6)
+
+        X, Y, Z = np.meshgrid(xgrid, ygrid, zgrid, indexing='ij')
+
+        if True:
+            mask = self.bottom_condition(X, Y, Z)[0].astype(float) * \
+            self.top_condition(X, Y, Z)[0].astype(float) * \
+            self.wall_conditions(X, Y, Z)[0].astype(float)
+
+            verts, faces, normals, values = measure.marching_cubes(
+                mask, level=0.5, spacing=(xgrid[1]-xgrid[0], ygrid[1]-ygrid[0], zgrid[1]-zgrid[0])
+            )
+            verts[:, 0] += xgrid.min()
+            verts[:, 1] += ygrid.min()
+            verts[:, 2] += zgrid.min()
+
+            mesh = Poly3DCollection(verts[faces], alpha=Cu_alpha)
+            mesh.set_facecolor(Cu_color)
+            ax.add_collection3d(mesh)
+        
+        if True:
+            mask = self.liquid_conditions(X, Y, Z).astype(float)
+
+            verts, faces, normals, values = measure.marching_cubes(
+                mask, level=0.5, spacing=(xgrid[1]-xgrid[0], ygrid[1]-ygrid[0], zgrid[1]-zgrid[0])
+            )
+            verts[:, 0] += xgrid.min()
+            verts[:, 1] += ygrid.min()
+            verts[:, 2] += zgrid.min()
+
+            mesh = Poly3DCollection(verts[faces], alpha=He_alpha)
+            mesh.set_facecolor(He_color)
+            ax.add_collection3d(mesh)
+            
+        for sensor in self.sensors:
+            mask = (sensor.get_surface_condition()(X, Y, Z))[0].astype(float)
+
+            verts, faces, normals, values = measure.marching_cubes(
+                mask, level=0.5, spacing=(xgrid[1]-xgrid[0], ygrid[1]-ygrid[0], zgrid[1]-zgrid[0])
+            )
+            verts[:, 0] += xgrid.min()
+            verts[:, 1] += ygrid.min()
+            verts[:, 2] += zgrid.min()
+
+            mesh = Poly3DCollection(verts[faces], alpha=sensor_alpha)
+            mesh.set_facecolor(sensor_color)
+            ax.add_collection3d(mesh)
+        
+        ax.view_init(elev=10, azim=0)
+
+        return fig, ax
 
 
 
@@ -416,20 +478,24 @@ class VDetector:
 
 def intersection(start, direction, conditions):
     """
-    Takes in a starting position and direction and projects forward
-    to find the position at which a boundary defined by one of the 
-    condition functions is crossed 
+    Finds the surface and point of boundary intersection by  assuming rectilinear motion and interpolating.
+    Takes vector-valued positions and directions to track > 1 particle at a time. 
     
-    Parameters (FIXME: figure out if this function is supposed to take in vector-valued initial conditions, or just a handles a single point at a time)
+    Parameters
     ----------
-    start : 
-
-    direction :
-
+    start : array
+        3xN Array with each column denoting a particle's (x,y,z) initial position
+    direction : array
+        3xN Array with each column denoting a particle's (x,y,z) initial velocity direction (FIXME: velocity or momentum?)
     conditions : list
-        list of boolean-valued functions of 3-d space.  
+        list of boolean-valued functions of 3-d space.
 
-
+    Returns
+    -------
+    X1, Y1, Z1 : array of floats
+        length N arrays denoting the X/Y/Z coordinates of interesection with a boundary  
+    surface_type : array of strings
+        "XY" or "Z"; defining the orientation of the boundary crossed
 
     """
     if np.isscalar( start[0] ):
@@ -438,25 +504,22 @@ def intersection(start, direction, conditions):
         direction = np.array([np.array([p]) for p in direction])
     t = np.array([np.linspace(0, 10, 500) for i in range(len(start[0]))])  # Parameter range for the line
     # Calculate the line coordinates
-    x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis]
+    x_line = start[0][:, np.newaxis] + t * direction[0][:, np.newaxis] # Project trajectory forward rectilinearly
     y_line = start[1][:, np.newaxis] + t * direction[1][:, np.newaxis]
     z_line = start[2][:, np.newaxis] + t * direction[2][:, np.newaxis]
 
     
-    dist = np.ones(len(start[0]))*9999.
+    dist = np.ones(len(start[0]))*9999. # Placeholders
     coords = [np.full(len(start[0]), None), np.full(len(start[0]), None), np.full(len(start[0]), None)]
     surface_type = np.full(len(start[0]), None)
+
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
-        # the below line is meant to calculate the indices of the past point
-        first_ints = np.array([np.argmax(~cut[i]) for i in range(len(cut))])
-        #if first_int == 0:
-        # continue
-        # this determines how far the particle is ??
-        d = t[np.arange(t.shape[0]), first_ints]
-        cond = ( d < dist ) & (first_ints > 0)
-        dist = np.where(cond, d, dist)        
-        #get the coords of the first point *before* the interaction
+        #if an array's max value is repeated, argmax returns the index of the first 
+        first_ints = np.array([np.argmax(~cut[i]) for i in range(len(cut))]) #indices of first time the condition fails (goes from True to False)
+        d = t[np.arange(t.shape[0]), first_ints] # t-value at which the boundary is first crossed
+        cond = ( d < dist ) & (first_ints > 0) # boolean of for which tracked particles this is first cut passed
+        dist = np.where(cond, d, dist)    
         coords[0] = np.where(cond, x_line[np.arange(x_line.shape[0]), first_ints-1], coords[0])
         coords[1] = np.where(cond, y_line[np.arange(y_line.shape[0]), first_ints-1], coords[1])
         coords[2] = np.where(cond, z_line[np.arange(z_line.shape[0]), first_ints-1], coords[2])
@@ -464,16 +527,28 @@ def intersection(start, direction, conditions):
     return np.array(coords[0], dtype = float), np.array(coords[1], dtype = float), np.array(coords[2], dtype= float), surface_type
 
 def find_surface_intersection(start, direction, up_conditions, down_conditions, alive):
-    """Finds the surface intersection by calculating the path, and finding the point right before the first intersection point.
+    """
+    Wrapper for intersection that partitions particles as going upward and downward and only checks for the conditions
+    relevant to each. (FIXME: why the hell would we do this? Does checking too many conditions slow things down?)
 
-    Args:
-        start (_type_): _description_
-        direction (_type_): _description_
-        conditions (_type_): _description_
+    Parameters
+    ----------
+        start : array
+            3xN Array with each column denoting a particle's (x,y,z) initial position
+        direction : array
+            3xN Array with each column denoting a particle's (x,y,z) initial velocity direction (FIXME: velocity or momentum?)
+        up_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+        down_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
 
-    Returns:
-        _type_: _description_
-    (FIXME: Update this when you figure out the above function)
+    Returns
+    -------
+    X1, Y1, Z1 : array of floats
+        length N arrays denoting the X/Y/Z coordinates of interesection with a boundary  
+    surface_type : array of strings
+        "XY" or "Z"; defining the orientation of the boundary crossed
+
     """
     
     # we need to apply a mask to these things, and then everything should work WONDERFULLY
@@ -536,25 +611,64 @@ def diffuse_and_specular(surface, pos, direction, diffuse_prob):
     if surface == 'XY':
         #we will do both specular and diffuse here. 
         specular_cut = np.random.uniform(size = (len(dx),)) > diffuse_prob
-        if list(specular_cut).count(True)> 0:
-            dx[specular_cut], dy[specular_cut], dz[specular_cut] = np.vectorize(wall_reflect)(x[specular_cut], y[specular_cut], dx[specular_cut], dy[specular_cut], dz[specular_cut]) 
-        dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = generate_random_direction_off_surface(surface='XY',pos = (x[~specular_cut], y[~specular_cut], z[~specular_cut])) 
+
+        dx[specular_cut], dy[specular_cut], dz[specular_cut] = specular_reflection(surface = 'XY',
+                                                                                   pos = (x[specular_cut], y[specular_cut],z[specular_cut]),
+                                                                                   dir = (dx[specular_cut], dy[specular_cut], dz[specular_cut])) 
+
+        dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = diffuse_reflection(surface= 'XY',
+                                                                                     pos = (x[~specular_cut], y[~specular_cut], z[~specular_cut]),
+                                                                                     dir = (dx[~specular_cut], dy[~specular_cut], dz[~specular_cut])) 
         return dx, dy, dz
     if surface == 'Z':
         # we will do both specular and diffuse
-        specular_cut = np.random.uniform(size = (len(direction[0]),)) > diffuse_prob
-        dz[specular_cut] = - dz[specular_cut]
+        specular_cut = np.random.uniform(size = (len(dx),)) > diffuse_prob
 
-        dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = generate_random_direction_off_surface('Z', pos = (dx[~specular_cut], dy[~specular_cut], dx[~specular_cut]))
+        dx[specular_cut], dy[specular_cut], dz[specular_cut] = specular_reflection(surface = 'XY',
+                                                                                   pos = (x[specular_cut], y[specular_cut], z[specular_cut]),
+                                                                                   dir = (dx[specular_cut], dy[specular_cut], dz[specular_cut]))
+        
+        dx[~specular_cut], dy[~specular_cut], dz[~specular_cut] = diffuse_reflection(surface = 'Z',
+                                                                                     pos = (x[~specular_cut], y[~specular_cut], z[~specular_cut]),
+                                                                                     dir = (dx[~specular_cut], dy[~specular_cut], dz[~specular_cut]))
 
         return dx, dy, dz
 
-        
+def specular_reflection(surface, pos = (0.0,0.0,0.0), dir = (0.0,0.0,-1.0)):
+    x = pos[0]
+    y = pos[1]
+    z = pos[2]
 
+    if surface == 'XY':
+        #Unit projection of position vector into xy plane
+        nx, ny = x/np.sqrt(x**2,y**2), y/np.sqrt(x**2+y**2)
+        dx = dir[0]
+        dy = dir[1]
+        dz = dir[2]
+        #Unit projection of direction vector into the xy plane
+        rx, ry = dx/np.sqrt(dx**2,dy**2), dy/np.sqrt(dx**2+dy**2)
+        r_dot_n = (nx*rx + ny*ry)
+        #Subtracting off twice the compontentcomponent
 
-def generate_random_direction_off_surface(surface, pos = (0.0,0.0,0.0)):
-    """Meant to take in a surface and generate a random direction relative to that. 
-    I want to make this function more case by case too. `
+        dx = rx - 2 * r_dot_n * nx
+        dy = ry - 2 * r_dot_n * ny
+
+        dx, dy, dz = dx/np.sqrt(dx**2+dy**2+dz**2), dy/np.sqrt(dx**2+dy**2+dz**2), dz/np.sqrt(dx**2+dy**2+dz**2)
+        return dx, dy, dz
+    
+    if surface == 'Z':
+        dx = dir[0]
+        dy = dir[1]
+        dz = dir[2]
+        dz = -dz
+        return dx, dy, dz
+
+def diffuse_reflection(surface, pos = (0.0,0.0,0.0), dir = (0.0,0.0,-1.0)):
+
+    """
+    Generates a reflection direction given a surface orientation assuming
+    Lambertian (diffuse) reflection.
+    Meant to take in a surface and generate a random direction relative to that. 
     Args:
         surface_type (_type_): _description_
     """
@@ -562,31 +676,33 @@ def generate_random_direction_off_surface(surface, pos = (0.0,0.0,0.0)):
     x = pos[0]
     y = pos[1]
     z = pos[2]
+    
     if surface == 'XY':
         # ~~~~~~~~~~~ Doing this case by case, dx, dy, dz should already be cut to be alive and diffuse, and at an 'XY' surface
-        phi_1, arctheta_1 = np.random.uniform(np.pi/10, 9 * np.pi/10, size=len(x)), np.random.uniform(-1., 1, size=len(x))
-        
-        offset_angles_1 = np.arctan2(x, y)
-        phi_1 += offset_angles_1
-        theta_1 = np.arccos(arctheta_1)
-        dx = np.cos( phi_1 ) * np.sin( theta_1 )
-        dy  = np.sin( phi_1 ) * np.sin( theta_1 )
-        dz  = np.cos(theta_1)
+        # polar coordinates in the frame of reference with zhat inward normal from the surface 
+        phi_1, sintheta_1 = 2*np.pi*np.random.uniform(0,1, size = len(x)), np.random.uniform(0,1, size = len(x))
+        costheta_1 =np.sqrt(1 - sintheta_1**2)
+
+        phi_pos_1 = np.arctan2(x, y)
+
+        dx = - (np.sin(phi_pos_1) * np.sin(phi_1) * sintheta_1) - (np.cos(phi_pos_1) * costheta_1)
+        dy = (np.cos(phi_pos_1) * np.sin(phi_1) * sintheta_1) - (np.sin(phi_pos_1) * costheta_1)
+        dz = np.cos(phi_1) * sintheta_1
         return dx, dy, dz
 
-
-    if surface == 'Z':
+    if surface == 'Z': #FIXME: this doesn't account for reflections off the ceiling
         # ~~~~~~~~~ This should where dx, dy, dz and X, Y, Z have already been cut to be ALIVE, DIFFUSE, and at a 'Z' surface
-        phi_2, arctheta_2 = np.random.uniform(0, 2 * np.pi, size=len(x)), np.random.uniform(0, 1.0, size=len(x))
-        theta_2 = np.arccos(arctheta_2)
+        phi_2, sintheta_2 = 2*np.pi*np.random.uniform(0,1, size = len(x)), np.random.uniform(0,1, size = len(x))
+        zdir = dir[2]
+        theta_2 = np.arcsin(sintheta_2)
         dx = np.cos( phi_2 ) * np.sin( theta_2 )
         dy  = np.sin( phi_2 ) * np.sin( theta_2 )
-        dz  = np.cos(theta_2)
+        dz  = np.cos(theta_2) * -1 * np.sign(zdir) # determine whether we're hitting the top or bottom
         return dx, dy, dz
 
 
 
-def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta):
+def generate_random_direction(nQPs, bottom_phi = 0, top_phi = 2*np.pi, bottom_theta = -1, top_theta = 1):
     """
     Generates a random direction for a large number of quasiparticles, where that random direction is within ranges.
 
@@ -619,69 +735,134 @@ def generate_random_direction(nQPs, bottom_phi, top_phi, bottom_theta, top_theta
 
 
 
-def evaporation(momentum, energy, velocity, direction):
-    """Calculate the kinematics of a particle, after evaporation. This means that every argument here
-    is assumed to be only the ones that have already evaporated. 
-
-    Args:
-        momentum (array): 
-        energy (array): _description_
-        velocity (array): _description_
-        direction (array): _description_
+def evaporation(momentum, energy, direction):
+    """
+    Gives the momentum/direction of an evaporated He4 atom given the kinematics of the 
+    QP that evaporats it
+    Parameters
+    ----------
+        momentum : float/array of floats
+            QP momentum in keV/c
+        energy : float/array of floats
+            QP energy in eV
+        velocity : float/array of floats
+            QP velocity in 100 m/s
+        direction : 3-tuple
+            unit vector denoting the QP's direction
+    Returns
+    -------
+        dx,dy,dz : arrays of floats
+            unit vectors defining direction of ejected He4 atoms
+        momentum : array of floats
+            magnitude of momentum of ejected He4 atoms
     """
     dx, dy, dz = direction[0], direction[1], direction[2]
     if np.isscalar(momentum):
         momentum = np.array([momentum])
     if np.isscalar(energy):
         energy = np.array([energy])
-    if np.isscalar(velocity):
-        velocity = np.array([velocity])
 
-    m =  3.725472e6 #He mass in keV/c^2
-    E_binding = 0.00062 * 1e-3
-    pxi, pyi, pzi = momentum * dx, momentum * dy, momentum * dz
-    pxf, pyf =pxi, pyi
-    pzf = np.sqrt(2 * m * (energy - E_binding) - pxi**2 - pyi**2)
+    m =  3.725472e9 #He mass in eV/c^2
+    c = 2.99792458e8
 
-    momentum = np.sqrt(pxf**2 + pyf**2 + pzf**2)
+    # https://journals.aps.org/pr/abstract/10.1103/PhysRev.69.242
+    # Interpolation of data to 8 mK. This table is consistent with 
+    # other values used in classically modeling quantum evaporation
+    Vb = 0.000620 # eV 
+
+    pxi, pyi = momentum * dx, momentum * dy
+    pxf, pyf = pxi, pyi
+    pzf = np.sqrt(2 * m/1000 * (energy/1000 - Vb/1000) - pxi**2 - pyi**2)
+
+    momentum_final = np.sqrt(pxf**2 + pyf**2 + pzf**2)
     dx, dy, dz = pxf/momentum, pyf/momentum, pzf/momentum
-    # once again, just a reminder that these should only be for the QP element after evaporation
-    return dx, dy, dz, momentum
+
+    energy_final = energy - Vb #eV
+    velocity_final = momentum*1000/m * c
+    return dx, dy, dz, momentum_final, energy_final, velocity_final
 
 def evap_prob_of_p_theta(p, theta, evap_eff):
-    # For now, we are just going to do a uniform distribution, but this is to build this later
+    """"
+    I think this (currently barren) function that aims to simulate the kinematic/quantum mechanical 
+    probabilities of quantum evaporation
+
+    Parameters
+    ----------
+        p : array of floats
+            Array of QP momenta in keV
+        theta : array of floats
+            Angle of incidence with the helium surface
+            FIXME: this currently does nothing, but we probably need a bunch of data to peg this effect
+            down. For now, we're doing the right thing
+        evap_eff : array of floats
+            7-term array that indexes the evaporation probability for each of the QP momentum bins
+    Returns
+    -------
+        no_evap_bools : array of bool
+            True if evaporation is simulated to occur 
+        
+    """
     no_evap_bools = np.full_like(p,fill_value= False, dtype=bool)
     the_nums = np.random.uniform(low = 0.0, high = 1.0, size = len(p))
-    bins = [0.0, 1.1, 1.7, 2.2, 3.834, 4.5, 5.2]
-    bin_indices = np.digitize(p, bins) - 1 
-    # The way to think of this: np.digitize creates an array of bin indices, meaning that each point is assigned to a bin. 
+    bins = [0.0, 1.1, 1.7, 2.2, 3.834, 4.5, 5.2] #Bins of momentum in keV for different regions of the He dispersion curve
+    bin_indices = np.digitize(p, bins) - 1 #Finding which bin each of the quasiparticles falls into
+
     for ii in np.unique(bin_indices):
-        no_evap_bools[ii==bin_indices] = the_nums[ii==bin_indices] > evap_eff[ii]
+        no_evap_bools[ii==bin_indices] = the_nums[ii==bin_indices] < evap_eff[ii] 
     return no_evap_bools
     
 
-def critical_angle(Energy, momentum, binding_energy = 0.00062e-3):
-    m =  3.725472e6 #He mass in keV/c^2
-    c = 2.998e8
-    return np.arcsin(np.sqrt(2 * m * (Energy - binding_energy))/np.abs(momentum))
+def critical_angle(energy, momentum):
+    """"
+    Calculate the critical angle for quantum evaporation under strictly classical assumptions:
+        - Conversation of energy
+        - Converse of momentum parallel to surface
 
+    We're also going to use this to impose the energy threshold for evaporation. Any particle
+    without sufficient energy to liberate a atom will be given a critical angle of zero
 
-# Define a function to extract the CPD number using regex
-# @np.vectorize(otypes=[str])
-# def extract_number(s):
-#     match = re.search(r'\d+', s)  # Find the first occurrence of one or more digits
-#     if match:
-#         return int(match.group())  # Convert the matched digits to an integer
-#     return None  # Return None if no digits are found
-@np.vectorize
+    This currently throws obnoxious erri
+
+    Parameters
+    ----------
+        energy : float/array
+            Incoming quasiparticle's energy in eV
+        momentum : float/array
+            Incoming quaisparticle's momentum in keV/c
+    Returns
+    -------
+        angle : float/array
+            Critical angle of incidence for incoming quasiparticle to produce evaporation
+    """
+
+    # https://journals.aps.org/pr/abstract/10.1103/PhysRev.69.242
+    # Interpolation of data to 8 mK. This table is consistent with 
+    # other values used in classically modeling quantum evaporation
+    Vb = .62e-3 # atom/surface binding energy for superfluid helium in eV
+    m =  3.725472e9 #He mass in eV/c^2
+
+    sin = np.where( energy >= Vb, np.sqrt(2 * m *(energy - Vb))/np.abs(momentum *1000), 0)
+    angle = np.where(np.abs(sin) < 1, np.arcsin(sin), np.arcsin(1))
+    return angle
+
+# Define a function to extract the sensor number using regex
+#@np.vectorize#(otypes=[str])
 def extract_number(s):
-    if s == None:
-        return False
-    s = list(s)
-    last_element = s[-1]
-    if last_element.isdigit():
-        return int(last_element)
-    return False
+    if s is None:
+        return -1
+    match = re.search(r'\d+', s)  # Find the first occurrence of one or more digits
+    if match is not None:
+        return int(match.group())  # Convert the matched digits to an integer
+    return -1  # Return -1 if no digits are found
+# @np.vectorize
+# def extract_number(s):
+#     if s == None:
+#         return False
+#     s = list(s)
+#     last_element = s[-1]
+#     if last_element.isdigit():
+#         return int(last_element)
+#     return False
 
 
 # Define a function to handle reflections off of walls
@@ -876,19 +1057,60 @@ def conserve_z(momentum, conserved_mom, cons_x, cons_y, dz):
 Quasiparticle Propagation
 ##############################
 """
-def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob, evap_eff=0.6, diffuse_prob = 0.0, T=2., debug= False, debug_dir = (0,0,1), plot_3d=False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True):
-    """Tracking of Quasiparticles through medium. I'm going to add a debug flag where we can specify the direction that the particles go in, in this case I am first going to make all of them go straight down. 
+def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob, evap_eff=np.array([1,1,1,1,1,1,1]), diffuse_prob = 0.0, T=2., plot_3d=False, fixed_dir = None, fixed_momentum = None, verbose = False, flavor_switching = False):
+    """
+    Tracking of Quasiparticles through medium. 
    
-    Args:
-        nQPs (int): The number of quasiparticles being tracked at a given time.  
-        start (ndarray): the initial location of the quasiparticles.  
-        conditions (func): list of function assigning the conditions on the particles
-        reflection_prob (float): the probability of reflection on certain surfaces (we don't really know what this is, and I don't ) 
-        evap_eff (float, optional): The evaporation efficiency through the surface. Defaults to 0.60.
-        T (float, optional): the thermal temperature of the helium I think, probably in mk. Defaults to 2..
+    Parameters
+    ----------
 
-    Returns:
-        _type_: _description_
+        nQPs : int 
+            The number of quasiparticles to be simulated.  
+        start : array 
+            the initial location of the quasiparticles.
+            All are assumed to originate from the same location
+        up_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+        down_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+        reflection_prob : float
+            Probability of reflection off a copper surface
+        evap_eff : array of floats
+            Length 7 array defining evaporation probablities in for each of the QP momentum bins
+        diffuse_prob : float
+            Probability of QP reflecting diffusely off of a solid surface
+        T : float
+            effective temperature of momentum distribution
+        plot_3d : boolean
+            Plot the trajectories of the tracked quasiparticles
+        fixed_dir : 3-tuple of floats
+            Allow the user to manually set the QP's initial direction's unit vector. Default is isotropy.
+        fixed_momentum : float
+            Allow the user to manually set a momentum in keV. Default is random sampling
+        flavor_switching : boolean
+            Simulate energy-conserving flavor switching of quasiparticles at reflections 
+
+
+    Returns
+    -------
+        energyAtDeath : array
+            Array of energies (in eV) of the quasiparticles just before death/detection
+        sensorIdsAll : array of ints
+            Array of integers that define which sensor detected the QP
+            -1 if not detected; otherwise the the corresponding integer
+        evaporated : array of floats
+            Array of floats that defines whether or not each QP is ever
+            evaporated
+        total_time : array of floats
+            Array of times (in us) at which the QPs die or are detected
+        step_count : array of ints
+            Array of the number of steps before the particle died/collected
+        initial_momentum : array of floats
+            Array of the inital momenta of all QPs in keV/c
+        paths : 3-tuple
+            each object is a nQPs x 100 array; each row are the coordinates 
+            of each QPs at vertices
+
     """
     # initializing Variables
     # ~~~~~~~~~~~~~~~~~~~~~~
@@ -899,100 +1121,80 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
         Z = np.full(nQPs, start[2])
         start = np.array([X, Y, Z])
     paths = (0,0,0)
-    if plot_3d:
-        particles_x = np.zeros(shape=(nQPs, 100))
-        particles_y = np.zeros(shape=(nQPs, 100))
-        particles_z = np.zeros(shape=(nQPs, 100))
- 
-    X, Y, Z = start[0], start[1], start[2]
-    dx, dy, dz = generate_random_direction(nQPs, 0.0, 2.0 * np.pi, -1.0, 1.0)
 
-    if debug: 
-        dx = np.full(nQPs, debug_dir[0]) 
-        dy = np.full(nQPs, debug_dir[1]) 
-        dz = np.full(nQPs, debug_dir[2]) 
+    particles_x = np.zeros(shape=(nQPs, 100))
+    particles_y = np.zeros(shape=(nQPs, 100))
+    particles_z = np.zeros(shape=(nQPs, 100))
+    X, Y, Z = start[0], start[1], start[2]
+    dx, dy, dz = generate_random_direction(nQPs)
+
+    if fixed_dir is not None: 
+        dx = np.full(nQPs, fixed_dir[0]) 
+        dy = np.full(nQPs, fixed_dir[1]) 
+        dz = np.full(nQPs, fixed_dir[2]) 
 
     total_time = np.zeros(nQPs, dtype=float)
     n=0
     #This draws from a k**2 distribution, essentially trying to follow the density of states
-    momentum = Random_QPmomentum(nQPs) #keV/c
+    momentum = Random_QPmomentum(nQPs, T=T) #keV/c
     initial_momentum=np.copy(momentum)
-    if choose_momentum:
-        momentum = np.full(nQPs, momentum_choice)
+    if fixed_momentum is not None:
+        momentum = np.full(nQPs, fixed_momentum)
     flavor = assign_flavors(np.abs(momentum))
     #prepare the alive tracker, and then cut out those which we can't sense
     alive = np.ones(nQPs, dtype=int)
-    cond = momentum <  1.1
+    cond = momentum <  1.1 #Lifetime cut
     alive = np.where( cond, 0, alive)
-
     #velocity and energy, both arrays of length nQP
     velocity = QP_velocity(momentum) #m/s
-    energy = QP_dispersion(momentum) *1e-3 #KeV
+    energy = QP_dispersion(momentum) #eV
     evaporated = np.zeros( nQPs, dtype=bool)
     # instead of inverting the velocity, we invert the momentum and later, when we use velocity, we take the magnitude of it anyways
     v_mask = velocity < 0
     momentum[v_mask] = -momentum[v_mask]
      
-    deposits = np.zeros(nQPs, dtype=float)
+    energyAtDeath = np.zeros(nQPs, dtype=float)
     ids = np.full(nQPs, None)
-    bounced_flag = np.zeros_like(alive)
-    #we prepare a boolean for evaporated, meaning that evaporated will be a mask that gets added to, then deposits is a float so idk what that is for, ids is for which cpd?
-    #here we can also add the particle locations
-    if plot_3d:
-        living = alive > 0.5
-        particles_x[:, 0][living] = X[living]
-        particles_y[:, 0][living] = Y[living]
-        particles_z[:, 0][living] = Z[living]
-    while sum(alive) > 0:
+    step_count = np.zeros_like(alive)
+    sensorIdsAll = -1*np.ones_like(alive, dtype=int)
+
+    living = alive > 0.5
+    particles_x[:, 0][living] = X[living]
+    particles_y[:, 0][living] = Y[living]
+    particles_z[:, 0][living] = Z[living]
+
+    while sum(alive) > 0: # loop until all particles are dead
         
         n+=1
-        #prepare an array for the living ones (alive is bool so this is really just not 0)
         living = ( alive > 0.5 )
-        #print(Z[living])
-        #find a surface intersection
+
         if verbose: 
             print(f'starting point: {np.array([X, Y, Z])}, direction of travel: {np.array([dx, dy, dz])}')
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living)
         if verbose: print(f'This is the surface type {surface_type}')
-        #I'm still confused on how this find_surfface_intersection could ever be None. Ok so it's automatically set to none
+
         hit_surface_check= (surface_type != None)
-        # print(list(hit_surface_check).count(False))
-        # we are just setting these things to 0. Hopefully this doesn't destroy our efficiency
-        # X[~hit_surface_check], Y[~hit_surface_check], Z[~hit_surface_check] = np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check]),np.zeros_like(X[~hit_surface_check])   
         dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
         
-
-        #eliminate (from the living) the values that have escaped without intersecting a surface (which should be none for this geometry)
-        alive = np.where(hit_surface_check, alive, 0)
-        #reset the living parameter and indices
+        alive[living] = np.where( hit_surface_check[living], alive[living], 0)
         living = ( alive > 0.5 )
-        # ~~~~~~~~~~~~~ To maintain the surface length is the right size
-        # surface_type = surface_type[hit_surface_check]
-        # print(len(living_indices) == len(surface_type))
-        # print(len(living_indices))
-        # print(len(surface_type))
-        # print(np.shape(living))
-        bounced_flag[living]  = np.full_like(alive[living], fill_value=n)
-        #set the new X1, Y1, Z1 space to exclude any particles that did not make it to a wall 
-        
-        #finding the time it took to go from initial point to intersection point
+
+        step_count[living]  = np.full_like(alive[living], fill_value=n)
+
         dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
         total_time[living] = total_time[living] + np.sqrt(dist_sq)/np.abs(velocity[living]*1.0e-4)  #us
         
         check1 = (surface_type == "Liquid")
+
+        alive_He_surface_check = living & check1
         
-        alive_surface_check = living & check1
-        #checking if it hit the surface of the liquid helium
-        if any(alive_surface_check):
+        # Handling evaporations/reflections at the helium surface
+        if any(alive_He_surface_check):
             if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Evaporations ~~~~~~~~~~~~~~~~~~~~')
-            # cut to discuss only the living qps that hit the surface of the helium
-            # print(np.shape(alive_surface_check))
-            # ~~~~~~~~~~~~~ this is the point where the particle is ALIVE and HIT THE SURFACE OF HELIUM
-            # evap, velocity[alive_surface_check], dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check] = evaporation(momentum[alive_surface_check], energy[alive_surface_check], velocity[alive_surface_check], [dx[alive_surface_check], dy[alive_surface_check], dz[alive_surface_check]])
-            # calc critical angle
+
             critical_angles = critical_angle(energy, momentum) 
-            incident_angles = np.arccos(dz)
-            evap_bools = evap_prob_of_p_theta(np.abs(momentum), incident_angles, evap_eff)
+            incident_angles = np.arccos(dz) #(FIXME: we need to add a bunch of checks to ensure that dx,dy, dz form a unit vector, even when user-defined)
+            evap_bools = evap_prob_of_p_theta(np.abs(momentum), incident_angles, evap_eff) # True if we're simulating to evaporate
             if verbose: 
                 print('This is evap bool')
                 print('\n')
@@ -1000,87 +1202,80 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
                 print('\n')
                 print('This is flavors')
                 print(flavor)
-                print(flavor_switching)
-                rminius = flavor =='R-' 
-                rplus = flavor =='R+' 
-                phonon= flavor =='phonon' 
-            # print(list(rminius[alive_surface_check]).count(True))
-            # print(list(rplus[alive_surface_check]).count(True))
-            # print(list(phonon[alive_surface_check]).count(True))
-            angle_check = (incident_angles > critical_angles)
-            no_evap = angle_check | evap_bools
-            a_L_noevap = alive_surface_check & no_evap # This is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and REFLECT
+                print(flavor_switching) 
+            angle_check = (incident_angles < critical_angles) #True if evaporation is kinematically permissible
+            no_evap = (~angle_check) | (~evap_bools) #Doesn't evaporate for kinematic or probabilistic reasons
+            a_L_noevap = alive_He_surface_check & no_evap # Mask for particles that are alive at the liquid interface but don't evaporate
             if verbose:
                 print(f'this is critical angles {critical_angles} and this is incident {incident_angles}')
                 print(f'This is no_evap {a_L_noevap}')
-            # print(len(no_evap) == len(alive_surface_check))
-            # print(len(no_evap) == list(alive_surface_check).count(True))
-            # Calculate reflections for the ones that don't evaporate. We must define a clear boolean for this 
+
             dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap] = diffuse_and_specular('Liquid', (X[a_L_noevap], Y[a_L_noevap], 
                                                                                 Z[a_L_noevap]), (dx[a_L_noevap], dy[a_L_noevap], dz[a_L_noevap]),
                                                                                  diffuse_prob=diffuse_prob)
 
             
-            a_L_evap = alive_surface_check & ~no_evap # THis is the mask that selects just the particles that are ALIVE, on the LIQUID SURFACE, and EVAPORATE
-            dx[a_L_evap], dy[a_L_evap], dz[a_L_evap], momentum[a_L_evap] = evaporation(momentum[a_L_evap], 
-                                                                                            energy[a_L_evap],
-                                                                                            velocity[a_L_evap], 
-                                                                                            direction=(dx[a_L_evap], dy[a_L_evap], dz[a_L_evap]))
+            a_L_evap = alive_He_surface_check & ~no_evap 
 
+            dx[a_L_evap], dy[a_L_evap], dz[a_L_evap], momentum[a_L_evap], energy[a_L_evap], velocity[a_L_evap] = evaporation(momentum[a_L_evap],energy[a_L_evap],direction=(dx[a_L_evap], dy[a_L_evap], dz[a_L_evap]))
 
-
-            # point of this line is to set this big array equal to True if it evaporated
             evaporated[a_L_evap] = True
-            # evaporated[alive_surface_check] = np.where( no_evap, evaporated[alive_surface_check], True )
+
             # ~~~~~~~~~~ If the QP doesn't evaporate, leave it where it is
             X[a_L_noevap] = X1[a_L_noevap]
             Y[a_L_noevap] = Y1[a_L_noevap]
-            Z[a_L_noevap] = Z1[a_L_noevap] - 0.05
+            Z[a_L_noevap] = Z1[a_L_noevap] - 0.05 
 
             # ~~~~~~~~~~ If the QP evaporates, move it up above the liquid surface 
             X[a_L_evap] = X1[a_L_evap]
             Y[a_L_evap] = Y1[a_L_evap]
             Z[a_L_evap] = Z1[a_L_evap] + 0.05
 
-       
-            
-                                            
-        check2 = np.array(["CPD" in str(s) for s in surface_type])
-        #print("Hit %i CPDs" % len(surface_type[check2]))
-        if any(living & check2):
+                                   
+        check2 = np.array(["sensor" in str(s) for s in surface_type])
+
+        # Handling the case in which the QP hits a sensor
+        # FIXME: this currently only accomodates sensors above the helium
+        alive_at_sensor_check = living & check2
+        if any(alive_at_sensor_check):
             if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Deposits ~~~~~~~~~~~~~~~~~~~~')
-            R_plus_mask = flavor =='R+'
-            cpd_id = np.empty_like(surface_type, dtype=int)
-            for ii, surface in enumerate(surface_type):
-                cpd_id[ii] = extract_number(surface)
-            cond = evaporated & living & check2
-            #print("nDeps", len(deposits[living_indices[check2]][cond]))
-            # deposits[living & check2] = np.where( cond, energy[living & check2], deposits[living & check2])
-            deposits[cond] = energy[cond] 
 
-            #going to store the CPD intersection point here for plotting purposes. 
+            sensorIdsAll[alive_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_sensor_check])
+            energyAtDeath[alive_at_sensor_check] = energy[alive_at_sensor_check] 
 
-            alive[cond] = np.zeros(len(alive[cond]), dtype=int) #kill off QPs, they've hit a CPD
-            ids[cond] = cpd_id[cond] #store the CPD IDs for evaporated QPs that hit a CPD
-            X[cond] = X1[cond]
-            Y[cond] = Y1[cond]
-            Z[cond] = Z1[cond]
-            # ids[cond] = cpd_id[cond]
+            alive[alive_at_sensor_check] = 0 #kill off QPs, they've hit a sensor
 
+            X[alive_at_sensor_check] = X1[alive_at_sensor_check]
+            Y[alive_at_sensor_check] = Y1[alive_at_sensor_check]
+            Z[alive_at_sensor_check] = Z1[alive_at_sensor_check]
 
-        check3 = (surface_type == 'XY') | (surface_type == 'Z') #doesn't reach liquid or CPD
-        living_check3 = living & check3
-        if any(living_check3):
+        
+        check3 = (surface_type == 'XY') | (surface_type == 'Z') 
+        living_not_evaporated_wall = living & check3 & ~evaporated
+        living_evaporated_wall = living & check3 & evaporated
+
+        #Handle evaporated He atoms that hit a wall/ceiling
+        if any(living_evaporated_wall):
+            energyAtDeath[living_evaporated_wall] = energy[living_evaporated_wall]
+            alive[living_evaporated_wall] = 0
+      
+            X[living_not_evaporated_wall] = X1[living_not_evaporated_wall]
+            Y[living_not_evaporated_wall] = Y1[living_not_evaporated_wall]
+            Z[living_not_evaporated_wall] = Z1[living_not_evaporated_wall]
+
+        #Handle QPs that hit a wall before evaporation
+        if any(living_not_evaporated_wall):
             if verbose: print('~~~~~~~~~~~~~~~~~~~~~~~ Computing Wall Reflections ~~~~~~~~~~~~~~~~~~~~')
             # Let's simplify this
             XY_check = (surface_type == 'XY')
             Z_check = (surface_type == 'Z')
-            a_xy_check = living & check3 & XY_check
-            a_z_check = living & check3 & Z_check
-            r = np.random.random(len(surface_type[living & check3]))
+            a_xy_check = living_not_evaporated_wall & XY_check
+            a_z_check = living_not_evaporated_wall & Z_check
+            r = np.random.random(len(surface_type[living_not_evaporated_wall]))
             cond = (r > reflection_prob)
-            alive[living &check3] = np.where(cond, 0, alive[living & check3]) #kill of those that don't reflect
-            converting_range= (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
+            energyAtDeath[living_not_evaporated_wall] = np.where(cond, energy[living_not_evaporated_wall],  energyAtDeath[living_not_evaporated_wall])
+            alive[living_not_evaporated_wall] = np.where(cond, 0, alive[living_not_evaporated_wall]) #kill of those that don't reflect
+            converting_range = (flavor == 'phonon') | (flavor == 'R-') | (flavor == 'R+')
             # ~~~~~~~~~~~ First do case of reflection off XY.
             if any(a_xy_check):
                 dx[a_xy_check], dy[a_xy_check], dz[a_xy_check] = diffuse_and_specular('XY', pos = (X1[a_xy_check],Y1[a_xy_check],Z1[a_xy_check]), 
@@ -1116,248 +1311,366 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, reflection_prob,
                             print(f' old flavors: {hold_flavor} and new flavors  {flavor[a_z_switch_check]}')
                             print(f' travel direction after flavor switching {np.array([dx, dy, dz])}')
 
-            X[living & check3] = X1[living &check3]
-            Y[living & check3 ] = Y1[living &check3]
-            Z[living & check3] = Z1[living &check3]
-        if plot_3d: 
-            try: 
-                particles_x[:, n][living] = X1[living]
-                particles_y[:, n][living] = Y1[living]
-                particles_z[:, n][living] = Z1[living]
-            except IndexError:
-                    print('one reflection has gone on more than 20 times')
+            X[living_not_evaporated_wall] = X1[living_not_evaporated_wall]
+            Y[living_not_evaporated_wall] = Y1[living_not_evaporated_wall]
+            Z[living_not_evaporated_wall] = Z1[living_not_evaporated_wall]
+
+        #at end of loop, record new positions
+        try: 
+            particles_x[:, n][living] = X1[living]
+            particles_y[:, n][living] = Y1[living]
+            particles_z[:, n][living] = Z1[living]
+        except IndexError:
+            print('one reflection has gone on more than 100 times')
+
     if plot_3d:
-        if verbose: print(f'this is the bounced flag {bounced_flag}')
         ax = plt.figure().add_subplot(projection ='3d')
         for i in range(nQPs ):
             mask = (particles_x[i,:] == 0) &(particles_y[i,:] == 0) & (particles_z[i,:] == 0) 
-            ax.plot(particles_x[i,:][~mask], particles_y[i,:][~mask], particles_z[i,:][~mask], '-o', label = f'bounced {bounced_flag[i]} times')
-        ax.set_xlim(-3.8, 3.8)
-        ax.set_ylim(-3.8, 3.8)
-        def walls(points, radius): 
-            theta = np.linspace(0, 2 * np.pi, points)
+            ax.plot(particles_x[i,:][~mask], particles_y[i,:][~mask], particles_z[i,:][~mask], marker = '.', lw = 1)
 
-            x = radius *np.cos(theta)
-            y = radius * np.sin(theta)
-            return x,y
-        x,y= walls(100, 3.5)
-        ax.plot(x,y)
-        xx, yy = np.meshgrid(np.linspace(-3.0, 3.0, 50), np.linspace(-3.0, 3.0, 50))
-        z = np.ones_like(xx) 
-        ax.plot_surface(xx, yy, z * 6, alpha = 0.2,  label = 'Liquid Surface')
-        z_cpd = z * 6.1
-        ax.plot_surface(xx, yy, z_cpd, alpha = 0.2, label = 'CPD Level' )
+        ax.view_init(elev = 0,azim = 0)
 
-        # ax.legend()
-        paths = (particles_x, particles_y, particles_z)
-    else:
-        paths = np.column_stack((X,Y,Z))
-    hit = (deposits > 0.)
-    if verbose: print(deposits[hit], total_time[hit])
+    
+    paths = (particles_x, particles_y, particles_z)
 
-
-    return deposits[hit], total_time[hit], ids[hit], bounced_flag, hit, paths, flavor[hit], initial_momentum[hit]
+    return energyAtDeath, sensorIdsAll, evaporated, total_time, step_count, initial_momentum, paths
         
-def photon_propagation(nPhotons, start, conditions, reflection_prob):
-        
+def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_reflection_prob = 0.0, plot_3d=False, fixed_dir = None):
+    """
+    Tracking of Quasiparticles through medium. 
+   
+    Parameters
+    ----------
+        nPhotons : int 
+            The number of quasiparticles to be simulated.  
+        start : array 
+            the initial location of the quasiparticles.
+            All are assumed to originate from the same location
+        up_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+        down_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+        wall_reflection_prob : float
+            Probability of reflection off a copper surface
+        plot_3d : boolean
+            Plot the trajectories of the tracked quasiparticles
+        fixed_dir : 3-tuple of floats
+            Allow the user to manually set the QP's initial direction's unit vector. Default is isotropy.
+
+
+    Returns
+    -------
+        energyAtDeath : array
+            Array of energies (in eV) of the quasiparticles just before death/detection
+        sensorIdsAll : array of ints
+            Array of integers that define which sensor detected the QP
+            -1 if not detected; otherwise the the corresponding integer
+        total_time : array of floats
+            Array of times (in us) at which the QPs die or are detected
+        step_count : array of ints
+            Array of the number of steps before the particle died/collected
+        paths : 3-tuple
+            each object is a nQPs x 100 array; each row are the coordinates 
+            of each QPs at vertices
+
+    """
     #make sure the we have an array of starting positions for each photon
     if np.isscalar(nPhotons):
         X = np.full(nPhotons, start[0])
         Y = np.full(nPhotons, start[1])
         Z = np.full(nPhotons, start[2])
         start = np.array([X, Y, Z])
-    
-    X, Y, Z = start[0], start[1], start[2]
-    phi, arctheta = np.random.uniform(0., 2.*np.pi, size=nPhotons), np.random.uniform(-1., 1, size=nPhotons)
-    theta = np.arccos(arctheta)
-    dx = np.cos( phi ) * np.sin( theta )
-    dy = np.sin( phi ) * np.sin( theta )
-    dz = np.cos(theta)
+    paths = (0,0,0)
 
-    #dx, dy, dz = 0., 0., 1
+    particles_x = np.zeros(shape=(nPhotons, 100))
+    particles_y = np.zeros(shape=(nPhotons, 100))
+    particles_z = np.zeros(shape=(nPhotons, 100))
+    X, Y, Z = start[0], start[1], start[2]
+    dx, dy, dz = generate_random_direction(nPhotons)
+
+    if fixed_dir is not None: 
+        dx = np.full(nPhotons, fixed_dir[0]) 
+        dy = np.full(nPhotons, fixed_dir[1]) 
+        dz = np.full(nPhotons, fixed_dir[2]) 
+
+
     total_time = np.zeros(nPhotons, dtype=float)
     n=0
-    alive = np.ones(nPhotons, dtype=int)
-
-    velocity = 29979.2/1.03 #speed of light in He4 cm/us    
-    cond = (velocity > 0.)
-    alive = np.where( cond, alive, 0.)
     
-    deposits = np.zeros(nPhotons, dtype=float)
-    ids = np.full(nPhotons, None)
+    alive = np.ones(nPhotons, dtype=int)
+    #FIXME: citation for this index of refraction
+    velocity = 29979.2/1.03 #speed of light in He4 cm/us    
+    # cond = (velocity > 0.)
+    # alive = np.where( cond, alive, 0.)
+    energy = np.ones(nPhotons) * 16.0
+    energyAtDeath = np.zeros(nPhotons, dtype=float)
+    step_count = np.zeros_like(alive)
+    sensorIdsAll = -1*np.ones_like(alive, dtype=int)
+
+    living = alive > 0.5
+    particles_x[:, 0][living] = X[living]
+    particles_y[:, 0][living] = Y[living]
+    particles_z[:, 0][living] = Z[living]
+
     while sum(alive) > 0:
         n+=1
         living = ( alive > 0.5 )
         
-        #print(Z[living])
-        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X[living], Y[living], Z[living]]), np.array([dx[living], dy[living], dz[living]]), conditions)
-        cond = (surface_type != None)
-        alive[living] = np.where( cond, alive[living], 0)
-        living = ( alive > 0.5 )
-        living_indices = np.where(living)[0]
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living)
 
-        X1, Y1, Z1 = X1[cond], Y1[cond], Z1[cond]
-        surface_type = surface_type[cond]
-        
-        dist_sq = (pow(X1-X[living],2.)+pow(Y1-Y[living], 2.)+pow(Z1-Z[living],2.)).astype(float)      
+        hit_surface_check = (surface_type != None)
+        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
+
+        alive[living] = np.where( hit_surface_check[living], alive[living], 0)
+        living = ( alive > 0.5 )
+
+        step_count[living] = np.full_like(alive[living], fill_value=n)
+
+        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
         total_time[living] = total_time[living] + np.sqrt(dist_sq)/velocity  #us
         
-        check1 = np.array(["CPD" in str(s) for s in surface_type])
-        #print("Hit %i CPDs" % len(surface_type[check2]))
-        if len(surface_type[check1]) > 0:
-            cpd_id = np.vectorize(extract_number)(surface_type[check1])
-            deposits[living_indices[check1]] = 1.
-            alive[living_indices[check1]] = 0 #kill off photons, they've hit a CPD
-            ids[living_indices[check1]] = cpd_id #store the CPD IDs for photons that hit a CPD
-            
-        check3 = (check1 == False) #doesn't reach CPD
-        if len(surface_type[check3]) > 0:
-            r = np.random.random(len(surface_type[check3]))
-            cond = (r > reflection_prob)
-            alive[living_indices[check3]] = np.where(cond, 0, alive[living_indices[check3]]) #kill of those that don't reflect
-            
-            #handle reflections
-            checkX = (surface_type == "X")
-            checkY = (surface_type == "Y")
-            checkZ = (surface_type == "Z")
-            checkXY = (surface_type == "XY")
-            
-            dx[living_indices[checkX]] = -1.*dx[living][checkX] 
-            dy[living_indices[checkY]] = -1.*dx[living][checkY] 
-            dz[living_indices[checkZ]] = -1.*dx[living][checkZ] 
-            
-            if len(dz[living][checkXY]) > 0:
-                dx[living_indices[checkXY]], dy[living_indices[checkXY]], dz[living_indices[checkXY]] = np.vectorize(wall_reflect)(X1[checkXY], Y1[checkXY], dx[living][checkXY], dy[living][checkXY], dz[living][checkXY] )
+        check1 = (surface_type == "Liquid")
 
+        alive_He_surface_check = living & check1
+        # Handling transmission through the Helium surface
+        # FIXME: for now, this doesn't account for refraction
+
+        if any(alive_He_surface_check):
+
+            X[alive_He_surface_check] = X1[alive_He_surface_check] 
+            Y[alive_He_surface_check] = Y1[alive_He_surface_check] 
+            Z[alive_He_surface_check] = Z1[alive_He_surface_check] + .005
+
+        check2 = np.array(["sensor" in str(s) for s in surface_type])
+
+        alive_at_sensor_check = living & check2
+        if any(alive_at_sensor_check):
+
+            sensorIdsAll[alive_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_sensor_check])
+            energyAtDeath[alive_at_sensor_check] = energy[alive_at_sensor_check] 
+
+            alive[alive_at_sensor_check] = 0 #kill off QPs, they've hit a sensor
+
+            X[alive_at_sensor_check] = X1[alive_at_sensor_check]
+            Y[alive_at_sensor_check] = Y1[alive_at_sensor_check]
+            Z[alive_at_sensor_check] = Z1[alive_at_sensor_check]
         
-            X[living_indices[check3]] = X1[check3]
-            Y[living_indices[check3]] = Y1[check3]
-            Z[living_indices[check3]] = Z1[check3]
-        #print(alive)
-    hit = (deposits > 0.)
-    return deposits[hit], total_time[hit], ids[hit]
+        check3 = (surface_type == 'XY') | (surface_type == 'Z') 
+        living_wall = living & check3
+
+        if any(living_wall):
+
+            energyAtDeath[living_wall] = energy[living_wall]
+            alive[living_wall] = 0
+
+            X[living_wall] = X1[living_wall]
+            Y[living_wall] = Y1[living_wall]
+            Z[living_wall] = Z1[living_wall]
+
+        try: 
+            particles_x[:, n][living] = X1[living]
+            particles_y[:, n][living] = Y1[living]
+            particles_z[:, n][living] = Z1[living]
+        except IndexError:
+            print('one reflection has gone on more than 100 times')
+
+    if plot_3d:
+        ax = plt.figure().add_subplot(projection ='3d')
+        for i in range(nPhotons ):
+            mask = (particles_x[i,:] == 0) &(particles_y[i,:] == 0) & (particles_z[i,:] == 0) 
+            ax.plot(particles_x[i,:][~mask], particles_y[i,:][~mask], particles_z[i,:][~mask], marker = '.', lw = 1)
+
+        ax.view_init(elev = 0,azim = 0)
+
+    
+    paths = (particles_x, particles_y, particles_z)
+        
+    return energyAtDeath, sensorIdsAll, total_time, step_count, paths
 
 
 ''' #########################################################################
 
-    Define functions for getting the energy deposited in the CPDs
+    Define functions for getting the energy deposited in the sensors
     
     ######################################################################### '''
 
-def GetSingletSignal(detector, photons, X, Y, Z, useMap=True):
+
+def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.0, plot_3d = False, fixed_dir = None, fixed_momentum = None, verbose = False, flavor_switching = False, debug = False):
     '''
-    Attempt to simulate the CPD response for singlet photons.
+    Performs a simulation of quasiparticle propagation inside your detector. Depending on whether the useMap is True,
+    this will either use pre-generated detection probabilities, or use pregenerated collection efficiency
+    FIXME: This will not use a light collection map
+    Parameters
+    ----------
+        detector : vDetector
+            virtual detector object inside of which you wish to simulate QP propagation
+        QPs : int
+            number of quasiparticles to simulate
+        X, Y, Z : floats
+            coordinates of the QP's origin in cm
+        useMap : boolean
+            Whether to fully simulate QP motion from first principles, or use-precalculated collectoin efficiency maps
+        T : float
+            effective temperature from which to sample the quasiparticle momenta (FIXME: not curretly used)
+        plot_3d : boolean
+            Generate a 3d plot of QP paths
+        fixed_dir : 3-tuple of floats
+            Allow the user to manually set the QP's initial direction's unit vector. Default is isotropy.
+        fixed_momentum : float
+            Allow the user to manually set a momentum in keV. Default is random sampling
+        verbose : bool
+        flavor_switching : bool
+            Flag whether to simulate flavor switching upon reflection 
+        debug : bool
+            default format the signal as HestSignal() object. If True, print out a bunch of tracking 
+            information that our detectors would normally not be privy to
 
-    If useMap == True, the detector's LCEmap is loaded and the number of photon hits are
-    calculated using that light collection efficiency given the interaction location.
-    If False, loop through individual photons, calculating the number of hits
-    and the arrival times.
-    Number of hits are converted to pulse areas using the Singlet Photon Energy
-    '''
-    #check to see if there's an LCEmap loaded/generated
-    if type(detector.get_LCEmap()) == int:
-        useMap = False
+    Returns (default)
+    -----------------
+        Signal : HestSignal
+            Signal object containing hits times and energy deposits
 
-    nCPDs = detector.get_nCPDs()
-    nHitsPerCPD = [0]*nCPDs
-    arrivalTimes = [[] for x in range(nCPDs)]
-    chAreas = [0.]*nCPDs
-    #check to see if a map is loaded
-    if useMap:
-        hitProbabilities = detector.get_photon_hits( X, Y, Z )
-        coincidence = 0
-        for i in range(nCPDs):
-            nHits = np.random.binomial(photons, hitProbabilities[i])
-            coincidence += min([nHits, 1]) # 0 or 1
-            chAreas[i] = nHits*Singlet_PhotonEnergy
-            thisCPD = detector.get_CPD(i)
-            noiseBaseline = thisCPD.get_baselineNoise()
-            noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=nHits)
-            chAreas[i] += np.sum(noise)
+    Returns (if debug == True)
+    --------------------------
+        energyAtDeath : array
+            Array of energies (in eV) of the quasiparticles just before death/detection
+        sensorIdsAll : array of ints
+            Array of integers that define which sensor detected the QP
+            -1 if not detected; otherwise the the corresponding integer
+        evaporated : array of floats
+            Array of floats that defines whether or not each QP is ever
+            evaporated
+        total_time : array of floats
+            Array of times (in us) at which the QPs die or are detected
+        step_count : array of ints
+            Array of the number of steps before the particle died/collected
+        initial_momentum : array of floats
+            Array of the inital momenta of all QPs in keV/c
+        paths : 3-tuple
+            each object is a nQPs x 100 array; each row are the coordinates 
+            of each QPs at vertices
 
-        return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
+            
 
-    #if the map hasn't been loaded or we want arrival times...
-    conditions = detector.get_surface_conditions()
-    for i in range(nCPDs):
-        conditions.append( (detector.get_CPD(i)).get_surface_condition() )
-    hits, arrival_times, cpd_ids = photon_propagation(photons, [X, Y, Z], conditions, detector.get_photon_reflection_prob())
-    
-    coincidence = 0
-    #add in baseline noise for each detected photon
-    for i in range(nCPDs):
-        cond = (cpd_ids == i)
-        chAreas[i] = sum(hits[cond])*Singlet_PhotonEnergy
-        coincidence += min([len(hits[cond]), 1]) # 0 or 1
-        thisCPD = detector.get_CPD(i)
-        noiseBaseline = thisCPD.get_baselineNoise()
-        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=len(hits[cond]))
-        chAreas[i] += np.sum(noise)
-        arrivalTimes[i] = arrival_times[cond]
-
-
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes)
-
-
-def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = False, debug_dir = (0,0,1), plot_3d = False, choose_momentum = False, momentum_choice = 0.0, verbose = False, flavor_switching = True, save_hits_and_paths= False):
-    '''
-    Attempt to simulate the CPD response for quasiparticles.
-
-    If useMap == True, the detector's QPEmap is loaded and the number of QP hits are
-    calculated using that evaporation efficiency given the interaction location.
-    If False, loop through individual QPs, calculating the number of hits
-    and the arrival times.
-    Hits are floating point numbers containing the amount of energy deposited on the CPD
-    and then increased using the detector's adsorption gain.
-
+        
     '''
     #check to see if there's an LCEmap loaded/generated
     if type(detector.get_QPEmap()) == int:
         useMap = False
 
-    nCPDs = detector.get_nCPDs()
-    nHitsPerCPD = [0]*nCPDs
-    arrivalTimes = [[] for x in range(nCPDs)]
-    bounce_flag_with_cpd = [[] for x in range(nCPDs)]
-    flavor_with_cpd= [[] for x in range(nCPDs)]
-    chAreas = [0.]*nCPDs
+    nsensors = detector.get_nsensors()
+    arrivalTimes = [[] for x in range(nsensors)]
+    energies = [[] for x in range(nsensors)]
 
-    nCPDs = detector.get_nCPDs()
     up_conditions = detector.get_up_conditions()
 
-    for i in range(nCPDs):
-        up_conditions.append( (detector.get_CPD(i)).get_surface_condition() )
+    for i in range(nsensors):
+        up_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
     down_conditions = detector.get_down_conditions()
 
-        
-    hits, arrival_times, cpd_ids, bounced_flag, hit, paths, flavor, momentum = QP_propagation(QPs, [X, Y, Z], up_conditions=up_conditions, down_conditions=down_conditions, reflection_prob=detector.get_QP_reflection_prob(), 
+    energyAtDeath, sensorIdsAll, evaporated, total_time, step_count, initial_momentum, paths = QP_propagation(QPs, [X, Y, Z], up_conditions=up_conditions, down_conditions=down_conditions, reflection_prob=detector.get_QP_reflection_prob(), 
                                                                 evap_eff=detector.get_evaporation_eff(), T=T, diffuse_prob=detector.get_diffuse_prob(), 
-                                                                debug=debug, debug_dir = debug_dir, plot_3d = plot_3d, choose_momentum = choose_momentum, 
-                                                                momentum_choice = momentum_choice, verbose=verbose, 
+                                                                plot_3d = plot_3d, fixed_dir = fixed_dir, fixed_momentum = fixed_momentum, verbose=verbose, 
                                                                 flavor_switching=flavor_switching)
-    if save_hits_and_paths:
-        return hits, arrival_times, paths 
 
-    bounce_nums = bounced_flag
-    # print(len(bounced_flag))
-    # print(len(hit))
-    bounced_flag = bounced_flag[hit]
-    coincidence = 0
-    momentum_hit = [[]] * 2
-    for i in range(nCPDs):
-        cond = (cpd_ids == i)
-        chAreas[i] = sum(hits[cond] + detector.get_adsorption_gain()) # eV
-        coincidence += min([len(hits[cond]), 1]) # 0 or 1
-        thisCPD = detector.get_CPD(i)
-        noiseBaseline = thisCPD.get_baselineNoise()
-        noise = np.random.normal(noiseBaseline[0], noiseBaseline[1], size=len(hits[cond]))
-        chAreas[i] += np.sum(noise)
-        arrivalTimes[i] = arrival_times[cond]
-        bounce_flag_with_cpd[i] = bounced_flag[cond]
-        flavor_with_cpd[i] = flavor[cond]
-        momentum_hit[i] = momentum[cond] 
+    for i in range(nsensors):
+        hit_sensor_i_and_evaporated = (sensorIdsAll == i) & evaporated
+        hit_sensor_i_and_not_evaporated = (sensorIdsAll == i) & ~evaporated
 
-    return CPD_Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_cpd, num_bounces = bounce_nums, positions = paths, flavor=flavor_with_cpd, momentums = momentum_hit, arrivals_unsorted = arrival_times)
+        energies[i] = (energyAtDeath[hit_sensor_i_and_evaporated] + detector.get_sensor(i).get_adsorptionGain()) * detector.get_sensor(i).get_phononCollectionEfficiency()
+        energies[i] = np.append(energies[i], energyAtDeath[hit_sensor_i_and_not_evaporated] * detector.get_sensor(i).get_phononCollectionEfficiency())
+
+        arrivalTimes[i] = total_time[hit_sensor_i_and_evaporated]
+        arrivalTimes[i] = np.append(arrivalTimes[i], total_time[hit_sensor_i_and_evaporated])
+
+
+    # return Signal(sum(chAreas), chAreas, coincidence, arrivalTimes, bounced_flag = bounce_flag_with_sensor, paths = paths, flavor=flavor_with_sensor, momentums = momentum_hit, arrivals_unsorted = arrival_times)
+    if not debug:
+        return HestSignal(energies, arrivalTimes)
+    else:
+        return energyAtDeath, sensorIdsAll, evaporated, total_time, step_count, initial_momentum, paths
+
+def GetSingletSignal(detector, nPhotons, X, Y, Z, wall_reflection_prob = 0.0, useMap = True, plot_3d = False, fixed_dir = None, verbose = False, debug = False):
+    """
+    Parameters
+    ----------
+        detector : vDetector
+            virtual detector object inside of which you wish to simulate QP propagation
+        nPhotons : int
+            number of quasiparticles to simulate
+        X, Y, Z : floats
+            coordinates of the QP's origin in cm
+        wall_reflection_prob : float
+            Probability of a singlet photon reflecting off a wall/floor/ceiling
+        useMap : boolean
+            Whether to fully simulate QP motion from first principles, or use-precalculated collectoin efficiency maps
+        plot_3d : boolean
+            Generate a 3d plot of QP paths
+        fixed_dir : 3-tuple of floats
+            Allow the user to manually set the QP's initial direction's unit vector. Default is isotropy.
+        verbose : bool
+        flavor_switching : bool
+            Flag whether to simulate flavor switching upon reflection 
+            (FIXME: I'm guessing this doesn't when using the map)
+        debug : bool
+            default format the signal as HestSignal() object. If True, print out a bunch of tracking 
+            information that our detectors would normally not be privy to
+
+    Returns (default)
+    -----------------
+        Signal : HestSignal
+            Signal object containing hits times and energy deposits
+
+    Returns (if debug == True)
+    --------------------------
+        energyAtDeath : array
+            Array of energies (in eV) of the quasiparticles just before death/detection
+        sensorIdsAll : array of ints
+            Array of integers that define which sensor detected the QP
+            -1 if not detected; otherwise the the corresponding integer
+        evaporated : array of floats
+            Array of floats that defines whether or not each QP is ever
+            evaporated
+        total_time : array of floats
+            Array of times (in us) at which the QPs die or are detected
+        step_count : array of ints
+            Array of the number of steps before the particle died/collected
+        initial_momentum : array of floats
+            Array of the inital momenta of all QPs in keV/c
+        paths : 3-tuple
+            each object is a nQPs x 100 array; each row are the coordinates 
+            of each QPs at vertices    
+    """
+    #check to see if there's an LCEmap loaded/generated
+    if type(detector.get_QPEmap()) == int:
+        useMap = False
+
+    nsensors = detector.get_nsensors()
+    arrivalTimes = [[] for x in range(nsensors)]
+    energies = [[] for x in range(nsensors)]
+
+    up_conditions = detector.get_up_conditions()
+
+
+    for i in range(nsensors):
+        up_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
+    down_conditions = detector.get_down_conditions()
+    energyAtDeath, sensorIdsAll, total_time, step_count, paths = photon_propagation(nPhotons, [X,Y,Z], up_conditions, down_conditions, 
+                                                                 wall_reflection_prob, plot_3d = plot_3d, fixed_dir = fixed_dir )
+    
+    for i in range(nsensors):
+        hit_sensor_i = (sensorIdsAll == i)
+
+        energies[i] = (energyAtDeath[hit_sensor_i]) * detector.get_sensor(i).get_phononCollectionEfficiency()
+
+        arrivalTimes[i] = total_time[hit_sensor_i]
+        arrivalTimes[i] = np.append(arrivalTimes[i], total_time[hit_sensor_i])
+    
+    if not debug:
+        return HestSignal(energies, arrivalTimes)
+    else:
+        return energyAtDeath, sensorIdsAll, total_time, step_count, paths
 
 ''' #########################################################################
     Define functions for turning lists of arrival times into pulse shapes (and generating pulse shapes for LEE events)
@@ -1365,14 +1678,14 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2., debug = Fals
     
 def GetLEEPulse(area):
     template_gen = Template(verbose=True)
-    template_gen.create_template('CPD_1',A=1,B=1,
+    template_gen.create_template('sensor_1',A=1,B=1,
                                  trace_length_msec=5, #msec
                                  pretrigger_length_msec=2, #msec
                                  sample_rate=1.25e6, #Hz
                                  tau_r=65.00e-6, #sec
                                  tau_f1=190.0e-6, #sec
                                  tau_f2=596.0e-6) #sec
-    template_array1, time_array1 = template_gen.get_template('CPD_1')
+    template_array1, time_array1 = template_gen.get_template('sensor_1')
     normalization = np.sum(template_array1)*(time_array1[1] - time_array1[0])
     
     return template_array1*area/normalization, time_array1
@@ -1398,14 +1711,14 @@ def GetDetResponse(arrivalTimes_us):
 
     template_gen = Template()
     for time in arrivalTimes_us:
-            template_gen.create_template('CPDx',A=1,B=1, #All of these parameters will need to be tuned; currently copied from the LEE template
+            template_gen.create_template('sensorx',A=1,B=1, #All of these parameters will need to be tuned; currently copied from the LEE template
                                  trace_length_msec=.001*PulseTime_us, #msec;
                                  pretrigger_length_msec=time*.001, #msec
                                  sample_rate= data_freq, #Hz
                                  tau_r=65.00e-6, #sec
                                  tau_f1=190.0e-6, #sec
                                  tau_f2=596.0e-6) #sec
-            template_array1, time_array1 = template_gen.get_template('CPDx')
+            template_array1, time_array1 = template_gen.get_template('sensorx')
             normalization = 1 #Needs tuning
             template_array_total += template_array1/normalization
     # print(template_array_total)
