@@ -10,6 +10,7 @@ HeST.egg-info/top_level.txt
 HeST/analysis/__init__.py
 HeST/analysis/analysis_functions.py
 HeST/core/Detection.py
+HeST/core/Geometry.py
 HeST/core/HeST_Core.py
 HeST/core/WIMP_Generation.py
 HeST/core/__init__.py

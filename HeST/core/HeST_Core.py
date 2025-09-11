@@ -394,13 +394,18 @@ def GetQuanta(energy, interaction, T=2.):
     return QuantaResult( nSing_actual, nTrip_actual, nQP_actual )
 
 # Quasiparticle functions
-def GetInterpFunc(d_path):
+def GetInterpFunc(d_path, lower_bound = None, upper_bound = None, reverse_xy = False):
     """Creates an linear interpolation function from data found at the file path below,, giving us the ability to convert from resistance to temperature. 
     returns:
         Interpoltion function: If input exceeds range of the data function returns a NaN"""
     data = np.loadtxt(d_path, delimiter=',')
-    X = data[:,0]
-    Y = data[:,1]
+    if reverse_xy == False:
+        X = data[None:None,0]
+        Y = data[None:None,1]
+    else:
+        X = data[None:None,1]
+        Y = data[None:None,0]        
+
     return interp1d(X,Y, kind = 'linear')
 
 def get_phonon_mom_energy(d_path):
@@ -421,6 +426,11 @@ def get_rplus_mom_energy(d_path):
     Y = data[101:,0]
     return interp1d(X,Y, kind = 'linear')
     
+dispersion_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/dispersion_data.csv'
+velocity_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/velocity_data.csv'
+
+QP_dispersion_base = GetInterpFunc(dispersion_data_path)
+QP_velocity_base = GetInterpFunc(velocity_data_path)
 
 def QP_dispersion(p ):
     """
@@ -436,13 +446,10 @@ def QP_dispersion(p ):
             QP energy in eV
 
     """
-    dispersion_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/dispersion_data.csv'
-    interp = GetInterpFunc(dispersion_data_path)
 
-    energy = interp(p)
-    return energy * 1e-3 
+    return QP_dispersion_base(p) * 1e-3 
 
-def QP_velocity(p ):
+def QP_velocity(p):
     """
     Takes in quasiparticle momentum in keV/c; spits out quasiparticle velocity in m/s
 
@@ -456,10 +463,64 @@ def QP_velocity(p ):
             QP velocity in m/s
             
     """
-    dispersion_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/velocity_data.csv'
-    interp = GetInterpFunc(dispersion_data_path)
-    velocity = interp(p)
-    return velocity 
+
+    return QP_velocity_base(p) 
+
+
+phonon_momentum_base = GetInterpFunc(dispersion_data_path, reverse_xy = True, upper_bound = 62)
+rot_minus_momentum = GetInterpFunc(dispersion_data_path, reverse_xy = True, lower_bound = 61, upper_bound = 102)
+rot_plus_momentum = GetInterpFunc(dispersion_data_path, reverse_xy = True, lower_bound = 101)
+
+def phonon_momentum(E):
+    """
+    Takes in quasiparticle energy in eV; spits out quasiparticle 
+    momentum under the assumption of it being a phonon in keV/c
+
+    Parameters
+    ----------
+        p : array/float
+            QP energy in eV
+    Returns
+    -------
+        momentum : array/float
+            QP momentum in keV/c
+            
+    """
+    return phonon_momentum_base(E*1000) 
+
+def rminus_momentum(E):
+    """
+    Takes in quasiparticle energy in eV; spits out quasiparticle 
+    momentum under the assumption of it being a R- in keV/c
+
+    Parameters
+    ----------
+        p : array/float
+            QP energy in eV
+    Returns
+    -------
+        momentum : array/float
+            QP momentum in keV/c
+            
+    """
+    return rot_minus_momentum(E*1000) 
+
+def rplus_momentum(E):
+    """
+    Takes in quasiparticle energy in eV; spits out quasiparticle 
+    momentum under the assumption of it being a R+ in keV/c
+
+    Parameters
+    ----------
+        p : array/float
+            QP energy in eV
+    Returns
+    -------
+        momentum : array/float
+            QP momentum in keV/c
+            
+    """
+    return rot_plus_momentum(E*1000) 
 
 
 def Random_QPmomentum(nQPs, T=2, pmin = .15, pmax = 4.6):
