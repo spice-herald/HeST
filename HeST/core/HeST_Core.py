@@ -523,7 +523,7 @@ def rplus_momentum(E):
     return rot_plus_momentum(E*1000) 
 
 
-def Random_QPmomentum(nQPs, T=2, pmin = .15, pmax = 4.6):
+def Random_QPmomentum(nQPs, T=2, pmin = 0, pmax = 4.6):
     """"
     Randomly sample Quasiparticles from a Bose-Einstein distribution with some effective temperature
 

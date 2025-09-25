@@ -1469,6 +1469,122 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
         
     return energyAtDeath, sensorIdsAll, total_time, step_count, paths
 
+def triplet_propagation(nTriplets, start, up_conditions, down_conditions,
+                        max_dist = 10, step_size = .05, plot_3d=False, fixed_dir = None):
+    if np.isscalar(nTriplets):
+        X = np.full(nTriplets, start[0], dtype = np.float64)
+        Y = np.full(nTriplets, start[1], dtype = np.float64)
+        Z = np.full(nTriplets, start[2], dtype = np.float64)
+        start = np.array([X, Y, Z])
+
+    #initialize arrays for storing particle paths
+    paths = (0,0,0)
+    particles_x = np.zeros(shape=(nTriplets, 100))
+    particles_y = np.zeros(shape=(nTriplets, 100))
+    particles_z = np.zeros(shape=(nTriplets, 100))
+
+    #Iinitiallizing current particle positions/momenta
+    X, Y, Z = start[0], start[1], start[2]
+    dx, dy, dz = generate_random_direction(nTriplets)
+    if fixed_dir is not None: 
+        dx = np.full(nTriplets, fixed_dir[0]) 
+        dy = np.full(nTriplets, fixed_dir[1]) 
+        dz = np.full(nTriplets, fixed_dir[2]) 
+
+    total_time = np.zeros(nTriplets, dtype=float)
+    n=0
+    
+    alive = np.ones(nTriplets, dtype=int)
+    velocity = .0001 #1 m/s; placeholder for now    
+    # cond = (velocity > 0.)
+    # alive = np.where( cond, alive, 0.)
+    energy = np.ones(nTriplets) * 16.0
+    energyAtDeath = np.zeros(nTriplets, dtype=float)
+    step_count = np.zeros_like(alive)
+    #-1 is default, indicating not hitting  a sensor
+    sensorIdsAll = -1*np.ones_like(alive, dtype=int)
+
+    living = alive > 0.5
+    particles_x[:, 0][living] = X[living]
+    particles_y[:, 0][living] = Y[living]
+    particles_z[:, 0][living] = Z[living]
+
+    while np.sum(alive) > 0:
+
+        n+=1
+        living = ( alive > 0.5 )
+   
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living, max_dist, step_size)
+  
+        hit_surface_check = (surface_type != None)
+        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
+
+        alive[living] = np.where( hit_surface_check[living], alive[living], 0)
+        living = ( alive > 0.5 )
+
+        step_count[living] = np.full_like(alive[living], fill_value=n)
+
+        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
+        total_time[living] = total_time[living] + np.sqrt(dist_sq)/velocity  #us
+
+        hit_sensor_check  = np.array(["sensor" in str(s) for s in surface_type])
+
+        #Managing triplets that have reached a sensor
+        alive_at_sensor_check = living & hit_sensor_check
+        if alive_at_sensor_check.any():
+
+            #Update position
+            X[alive_at_sensor_check] = X1[alive_at_sensor_check]
+            Y[alive_at_sensor_check] = Y1[alive_at_sensor_check]
+            Z[alive_at_sensor_check] = Z1[alive_at_sensor_check]
+
+            #Update alive/energyAtDeath/sensor IDs 
+            alive[alive_at_sensor_check] = 0
+            sensorIdsAll[alive_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_sensor_check])
+            energyAtDeath[alive_at_sensor_check] = energy[alive_at_sensor_check] 
+
+        #Managing triplets that hit a wall/floor/liquid 
+        alive_not_at_sensor_check = living & hit_surface_check & ~hit_sensor_check
+        if alive_not_at_sensor_check.any():
+
+            #Update position
+            X[alive_not_at_sensor_check] = X1[alive_not_at_sensor_check]
+            Y[alive_not_at_sensor_check] = Y1[alive_not_at_sensor_check]
+            Z[alive_not_at_sensor_check] = Z1[alive_not_at_sensor_check]
+
+            #Update alive/energyAtDeath/sensor IDs 
+            alive[alive_not_at_sensor_check] = 0
+            sensorIdsAll[alive_not_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_not_at_sensor_check])
+            energyAtDeath[alive_not_at_sensor_check] = energy[alive_not_at_sensor_check] 
+            
+def gamma_propagation(nGammas, start, MFP, conditions):
+    if np.isscalar(nGammas):
+        X = np.full(nGammas, start[0], dtype = np.float64)
+        Y = np.full(nGammas, start[1], dtype = np.float64)
+        Z = np.full(nGammas, start[2], dtype = np.float64)
+        start = np.array([X, Y, Z])
+
+    dep_in_He = np.full(nGammas, True)
+
+    #Initializing current particle positions/momenta
+    X, Y, Z = start[0], start[1], start[2]
+    dx, dy, dz = generate_random_direction(nGammas)
+
+    #Project forward in time to the expected deposition location
+    path_lengths = np.random.exponential(scale = MFP, size = nGammas )
+    X1, Y1, Z1 = X1 + (dx * path_lengths), Y1 + (dy * path_lengths), Z1 + (dz * path_lengths)
+
+    #Check for particles that have left the relevant volume
+    for condition in conditions:
+        crossed_boundary = ~condition(X,Y,Z)[0]
+        dep_in_He[ condition(X,Y,Z)[0] ] = False
+
+
+    dep_frac = np.sum(dep_in_He)/len(dep_in_He)
+    return X1[dep_in_He], Y1[dep_in_He], Z1[dep_in_He], dep_frac
+
+
+
 
 ''' #########################################################################
 
@@ -1566,8 +1682,8 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.0, max_dist = 
         hit_sensor_i_and_evaporated = (sensorIdsAll == i) & evaporated
         hit_sensor_i_and_not_evaporated = (sensorIdsAll == i) & ~evaporated
 
-        energies[i] = (energyAtDeath[hit_sensor_i_and_evaporated] + detector.get_sensor(i).get_adsorptionGain()) #* detector.get_sensor(i).get_phononCollectionEfficiency()
-        energies[i] = np.append(energies[i], energyAtDeath[hit_sensor_i_and_not_evaporated])# detector.get_sensor(i).get_phononCollectionEfficiency())
+        energies[i] = (energyAtDeath[hit_sensor_i_and_evaporated] + detector.get_sensor(i).get_adsorptionGain()) 
+        energies[i] = np.append(energies[i], energyAtDeath[hit_sensor_i_and_not_evaporated])
 
         arrivalTimes[i] = total_time[hit_sensor_i_and_evaporated]
         arrivalTimes[i] = np.append(arrivalTimes[i], total_time[hit_sensor_i_and_not_evaporated])
@@ -1653,7 +1769,7 @@ def GetSingletSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)
 
-        energies[i] = (energyAtDeath[hit_sensor_i]) * detector.get_sensor(i).get_phononCollectionEfficiency()
+        energies[i] = (energyAtDeath[hit_sensor_i]) 
 
         arrivalTimes[i] = total_time[hit_sensor_i]
     
@@ -1661,7 +1777,38 @@ def GetSingletSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05
         return HestSignal(energies, arrivalTimes)
     else:
         return energyAtDeath, sensorIdsAll, total_time, step_count, paths
+
+def GetTripletSignal(detector, nTriplets, X,Y,Z, max_dist = 10, step_size = .05, useMap = True,
+                     plot_3d = False, fixed_dir = None, verbose = False, debug = False):
     
+
+    nsensors = detector.get_nsensors()
+    arrivalTimes = [[] for x in range(nsensors)]
+    energies = [[] for x in range(nsensors)]
+
+    up_conditions = detector.get_up_conditions()
+
+
+    for i in range(nsensors):
+        up_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
+    down_conditions = detector.get_down_conditions()
+
+    energyAtDeath, sensorIdsAll, total_time, \
+    step_count, paths = triplet_propagation(nTriplets, [X,Y,Z], up_conditions, down_conditions,
+                                            max_dist = 10, step_size = .05, plot_3d=False, fixed_dir = None)
+    
+
+    for i in range(nsensors):
+        hit_sensor_i = (sensorIdsAll == i)
+
+        energies[i] = (energyAtDeath[hit_sensor_i]) 
+
+        arrivalTimes[i] = total_time[hit_sensor_i]
+    
+    if not debug:
+        return HestSignal(energies, arrivalTimes)
+    else:
+        return energyAtDeath, sensorIdsAll, total_time, step_count, paths
 
 
 def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, useMap = True, 
@@ -1738,7 +1885,7 @@ def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, use
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)
 
-        energies[i] = (energyAtDeath[hit_sensor_i]) * detector.get_sensor(i).get_phononCollectionEfficiency()
+        energies[i] = (energyAtDeath[hit_sensor_i]) 
 
         arrivalTimes[i] = total_time[hit_sensor_i]
     
