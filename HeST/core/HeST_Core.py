@@ -1,29 +1,67 @@
 import scipy.special as scispec
-from scipy.interpolate import interp1d
+from scipy.interpolate import CubicSpline, interp1d
 import numpy as np
 import os
 from qetpy.utils import fft, ifft, fftfreq, rfftfreq
 from tqdm import tqdm
+from numba import njit
 
 #Global constants
-Singlet_PhotonEnergy = 15.5 #eV
-Triplet_PhotonEnergy = 18.0 #eV
+# Singlet_PhotonEnergy = 15.5 #eV
+# Triplet_PhotonEnergy = 18.0 #eV
 
-#create some other classes to store results
-#unlike NEST, we won't have a mean yields object; just the quanta object with fluctuations applied
+# Excitation energies for yields; these numbers are 
+# geared toward the "observed" energy in that the singlet 
+# one is the photon energy while the triplet one is the 
+# total molecular excitation energy
+Singlet_ExcitationEnergy = 15.5 # eV; derived from potential curves
+Triplet_ExcitationEnergy = 18.0 # eV; derived from potential curves
+IR_ExcitationEnergy = 1 # eV
+
+
+# Singlet_ExcitationEnergy = 18.1 # eV; derived from potential curves
+# Triplet_ExcitationEnergy = 17.8 # eV; derived from potential curves
+
+
 class QuantaResult:
-    def __init__(self, SingletPhotons, TripletPhotons, Quasiparticles):
+    """
+    Simple Class for storing the number of singlet/IR photons, triplet molecules, and IR photons generated
+
+    Attributes
+    ----------
+        SingletPhotons : float
+            # of singlet photons generated in a recoil
+        TripletMolecules : float
+            # of long-lived triplet photons generated
+        IRPhotons : float
+            @ of IR photons generated
+        Quasiparticles : float
+            # of quasiparticles generated in the 
+    """
+    def __init__(self, SingletPhotons, TripletMolecules, IRPhotons, Quasiparticles):
         self.SingletPhotons = SingletPhotons
-        self.TripletPhotons = TripletPhotons
+        self.TripletMolecules = TripletMolecules
+        self.IRPhotons = IRPhotons
         self.Quasiparticles = Quasiparticles
 
-
+    def get_nSingletPhotons(self):
+        return self.SingletPhotons
+    
+    def get_nIRPhotons(self):
+        return self.IRPhotons
+    
+    def get_nTripletMolecules(self):
+        return self.TripletMolecules
+    
+    def get_nQuasiparticles(self):
+        return self.Quasiparticles
+    
 
 class HestSignal:
     """
     Signal is an object that 
 
-    attributes
+    Attributes
     ----------
         energies : list of floats
              List of length equal to number of sensors. Each element in a list is a quantum's
@@ -34,14 +72,36 @@ class HestSignal:
         templates
             
     """
-    def __init__(self, energies = [[]], arrivalTimes_us=[[]], templates = None, eV_amp_ratios = None):
+    def __init__(self, energies = [[]], arrivalTimes_us=[[]]):
 
         self.energies = energies #total pulse area
         self.arrivalTimes = arrivalTimes_us #time at which the particle hits the sensor
+    
+    def __add__(self, other):
+        if isinstance(other, HestSignal):
+            if ( len(self.energies) == len(other.energies) ) and ( len(self.arrivalTimes) == len(other.arrivalTimes) ):
 
-class HestNoise:
+                new_energies = []
+                for i in range(len(self.energies)):
+                    new_energies.append(np.append(self.energies[i], other.energies[i]))
+
+                new_times = []
+                for i in range(len(self.arrivalTimes)):
+                    new_times.append(np.append(self.arrivalTimes[i], other.arrivalTimes[i]))
+                
+                return HestSignal(new_energies, new_times)
+            
+            else:
+
+                raise ValueError("Number of channels must match")
+            
+
+
+class HestNoiseFactory:
     """
-    Noise that handles the noise across our CPDs. Creates sample noise from PSDs/CSDs
+    Noise that handles the noise across our CPDs. Creates sample noise from a single PSD 
+    (assuming all channels have identical noise spectra and that noise is uncorrelated 
+    between the two
 
     Parameters
     ----------
@@ -54,135 +114,65 @@ class HestNoise:
             multiple of the number of samples over which the user-give CSD is defined  
 
     """
-    def __init__(self, CSD, fs, nsamples):
-        if CSD.ndim == 3:
-            self.nchannels = CSD.shape[1]
-            if CSD.shape[0] != CSD.shape[1]:
-                raise ValueError("Inconsistently defined CSD")
-        elif CSD.ndim == 1:
-            
-            self.nchannels = 1
-            CSD = np.array([[CSD]])
-        else:
-            raise ValueError("CSD should have either 1 dimension (PSD) or 3")
-        if nsamples % CSD.shape[2] != 0:
-            raise ValueError("nsamples should be an integer multiple of the CSD sample count")
+    def __init__(self, PSD, fs, nsamples):
+        if not PSD.ndim == 1:
+            raise ValueError("PSD should have 1 dimension ")
+        if nsamples % len(PSD) != 0:
+            raise ValueError("nsamples should be an integer multiple of the PSD sample count")
 
         self.nsamples = nsamples
         self.fs = fs
-        self.CSD = CSD
-        self.CSD_interp = None
-        self.L_matrices = None
-        self.L_matrices_interp = None
-        self.waveform = None
+        self.PSD = PSD
+  
+        self.gen_interpolated_PSD()
 
 
-    def gen_interpolated_CSD(self):
+
+    def gen_interpolated_PSD(self):
         """
-        Generate CSD that's interpolated at the necessary frequencies to produce noise of 
+        Generate PSD that's interpolated at the necessary frequencies to produce noise of 
         the length nsamples. Frequencies that would require extrapolation are manually set
-        zero
+        to zero
 
         """
-        self.CSD_interp = np.ones((self.nchannels, self.nchannels, self.nsamples))*(0+0j)
-        freqs = fftfreq(self.CSD.shape[2], self.fs)
+        self.PSD_interp = np.ones( self.nsamples )*(0+0j)
+        freqs = fftfreq(self.PSD.size, self.fs)
         freqs_interp = fftfreq(self.nsamples, self.fs)
+        self.freqs = freqs
+        self.freqs_interp = freqs_interp
 
-        for i in range(self.nchannels):
-            for j in range(self.nchannels):
-                if j >= i:
-                    self.CSD_interp[i,j] = np.where((0 < np.abs(freqs_interp)) & (np.abs(freqs_interp) < freqs[1]), 0+0j, interp1d(freqs, self.CSD[i,j], bounds_error=False, fill_value = 0+0j )(freqs_interp))
-                    #FIXME: the above line doesn't handle the highest frequencies well. If the nyquist frequecny has no multiplicity, then
-                else:
-                    self.CSD_interp[j,i] = np.conjugate(self.CSD_interp[i,j])
+        self.PSD_interp = np.where( (0 < np.abs(freqs_interp)) & (np.abs(freqs_interp) < freqs[1]), 0+0j, interp1d(freqs, self.PSD, bounds_error=False, fill_value = 0+0j)(freqs_interp))
 
-    
-    def gen_noise_interpolation(self, calc_Ls = False ):
+        norm = len(self.PSD_interp) * self.fs
+        self.fourier_stds = np.sqrt(self.PSD_interp * norm)
+
+    def gen_noise(self):
         """
-        Generate noise of a desired length by using an CSD defined over longer time periods.
+        Generate noise from our interpolated PSD
         """
-        if self.CSD_interp is None:
-            self.gen_interpolated_CSD()
-        norm = self.CSD.shape[2] * self.fs
+        n = self.nsamples
+        half = (n - 1) // 2
+        even = (n % 2 == 0)
 
-        #(Re)calculate the L matrices as needed/requested by the user
-        print(calc_Ls)
-        print(self.L_matrices_interp is None)
-        if calc_Ls or self.L_matrices_interp is None:
-            n=0
-            self.L_matrices_interp = np.ones_like(self.CSD_interp)*(0+0j)
-            for f in tqdm(range(self.nsamples)):
-                try:
-                    L = np.linalg.cholesky(norm*self.CSD_interp[:,:,f])
-                except:
-                    L = np.ones((self.nchannels,self.nchannels))*(0+0j)
-                    n+=1
-                self.L_matrices_interp[:,:,f] = L
-            print("failed on "+str(n))
 
-        zs = np.random.normal(loc =0, scale= np.sqrt(2), size= (self.nchannels,self.nsamples)) 
-        zs = zs * np.exp( 2 * np.pi * 1j * np.random.uniform(0, 1, size= (self.nchannels,self.nsamples)))
-        if self.nsamples % 2:
-            zs[:,0] /= np.sqrt(2)
-            zs[:,int(self.nsamples/2)] /= np.sqrt(2)
+        zs = (np.random.normal(size=half) + 1j * np.random.normal(size=half)) / np.sqrt(2)
+
+        if even:
+            zs_final = np.empty(n, dtype=np.complex128)
+            zs_final[0] = 0.0
+            zs_final[1:half+1] = zs
+            zs_final[half+1] = np.random.normal()  # Nyquist frequency term
+            zs_final[half+2:] = np.conjugate(zs[::-1])
         else:
-            zs[:0] /= np.sqrt(2)
+            zs_final = np.empty(n, dtype=np.complex128)
+            zs_final[0] = 0.0
+            zs_final[1:half+1] = zs
+            zs_final[half+1:] = np.conjugate(zs[::-1])
 
-        fourier_coefficients = np.einsum('ijk,jk->ik',self.L_matrices_interp, zs)
-        waveform = np.real(ifft(fourier_coefficients,axis = 1))
-        self.waveform = waveform
-    
-    def gen_noise_stitching(self):
-        """
-        Generate noise of a desired length by generating a sufficient number of traces of length defined 
-        by the user-defined CSD and stitching them together 
-        """
-        count = self.nsamples // self.CSD.shape[2]
-        waveforms = []
-        for i in range(count):
-            waveforms.append(self.gen_noise())
+        zs_final *= self.fourier_stds
 
-        self.waveform = np.concatenate(waveforms)
+        return np.fft.ifft(zs_final).real
 
-    def gen_noise(self, calc_Ls=False):
-        """
-        Generate noise of length given by the user-defined CSD.
-
-        Returns
-        -------
-            noise : array
-                Array whose row vectors are sampled noise on each of the channels
-        """   
-        norm = self.CSD.shape[2] * self.fs
-
-        #(Re)calculate the L matrices as needed/requested by the user
-        if calc_Ls or self.L_matrices is None:
-            n=0
-            self.L_matrices = np.ones_like(self.CSD)*(0+0j)
-            for f in tqdm(range(self.CSD.shape[2])):
-                try:
-                    L = np.linalg.cholesky(norm*self.CSD[:,:,f])
-                except:
-                    L = np.ones((self.nchannels,self.nchannels))*(0+0j)
-                    n+=1
-                self.L_matrices[:,:,f] = L
-            print('failed on '+str(n))
-
-        zs = np.random.normal(loc =0, scale= np.sqrt(2), size= (self.nchannels,self.CSD.shape[2])) 
-        zs = zs * np.exp( 2 * np.pi * 1j * np.random.uniform(0, 1, size= (self.nchannels,self.CSD.shape[2])))
-        if self.CSD.shape[2] % 2 == 0:
-            zs[:,0] /= np.sqrt(2)
-            zs[:,int(self.CSD.shape[2]/2)] /= np.sqrt(2)
-        else:
-            zs[:,0] /= np.sqrt(2)
-        
-
-        fourier_coefficients = np.einsum('ijk,jk->ik',self.L_matrices, zs)
-        noise = np.real(ifft(fourier_coefficients,axis = 1))
-        return noise
-    
-    
-    
 
 # Polynomial functions to get the energy channel partitioning for ERs and NRs
 
@@ -255,7 +245,81 @@ def GetEnergyChannelFractions(energy, interaction):
 
     Parameters 
     ----------
+    energy : float
+        energy in eV
+    interaction : string
+        "ER" or "NR"
 
+    Returns
+    -------
+    singlet, triplet, QP, IR : floats
+        fractions of energy in each channel; should sum to 1
+
+
+    """
+
+    maxEnergy = 1.0e5
+    condition = (energy > maxEnergy)
+
+    energy = np.where( condition, maxEnergy, energy )
+    
+    # energy -- recoil energy in eV
+    if interaction == "ER":
+        singlet = ER_singlet_eFraction(energy)
+        triplet = ER_triplet_eFraction(energy)
+        QP      = ER_QP_eFraction(energy)
+        res     = 1-singlet-triplet-QP
+        cond    = (res < 0.)
+        IR      = np.where( cond, 0., res )
+    else:
+        if interaction == "NR":
+            singlet = NR_singlet_eFraction(energy)
+            triplet = NR_triplet_eFraction(energy)
+            QP      = NR_QP_eFraction(energy)
+            res     = 1-singlet-triplet-QP
+            cond    = (res < 0.)
+            IR      = np.where( cond, 0., res )
+        else:
+            print("Please specify ER or NR for interaction type!")
+            return 1
+
+    return singlet, triplet, QP, IR
+
+def Average_QPEnergy(T= 2., upper_bound = 4.54):
+    """
+    Estimates the number of quasiparticles that will be created given the total Quasiparticle energy.
+    Defaults to assuming that the QPs follow a BE distribution 
+
+    Parameters
+    ----------
+        E_total : float
+            Sum of all of the QP's energies in eV
+        T : float or None
+            Effective temperature of the BE distribution. Should be O(1) K; see arXiv 2208.14474
+            If None, defaults to limit of n(p)~p^2
+
+    Returns
+    -------
+        avg_num : float
+            Average number of quasiparticles to expect
+    """
+
+    k = 8.617e-5
+    p = np.linspace(0.001, upper_bound, 1000) 
+    if T is not None:
+        probs = p*p/(np.exp(QP_dispersion(p)/(k*T)) - 1)/np.sum(p*p/(np.exp(QP_dispersion(p)/(k*T)) - 1))
+    else:
+        probs = p*p/np.sum(p*p)
+
+    avg_energy = np.sum( probs * QP_dispersion(p) )
+    return avg_energy
+
+
+#combine the above functions into a single function
+def Sim_AbsYields(energy, interaction):
+    """
+    Wrapper function to get the 
+    ----------
     energy : float
         energy in eV
     interaction : string
@@ -296,14 +360,9 @@ def GetEnergyChannelFractions(energy, interaction):
 
     return singlet, triplet, QP, IR
 
-
 #HeST main yields function
 def GetSingletYields(energy, interaction):
-    # returns the mean prompt scintillation yield for
-    # the prompt + exponential + 1/t components
 
-    # energy -- recoil energy in eV
-    # interaction -- "ER" or "NR"
 
     detection_gain = 0.052 #to get the LBL yields to match with the ~35% energy fraction in prompt yields
 
@@ -344,69 +403,57 @@ def GetTripletEnergy( triplet_fraction, singlet_fraction, singlet_energy ):
 def GetQPEnergy( QP_fraction, singlet_fraction, singlet_energy ):
     return (QP_fraction/singlet_fraction) * singlet_energy
 
-def GetQuanta(energy, interaction, T=2.):
-    # energy -- recoil energy in eV
-    # interaction -- "ER" or "NR"
 
+def GetQuanta(energy, interaction, T=2., atomic_fano = 1.0, asQuantaResult = True, track_unstable_QPs = False):
     if np.isscalar(energy):
         energy = np.array([energy])
-        
-    singlet_fraction, triplet_fraction, QP_fraction, IR_fraction = GetEnergyChannelFractions(energy, interaction)
-    #nSingletPhotons = GetSingletYields(energy*singlet_fraction, interaction)
-    #singlet_energy = nSingletPhotons * Singlet_PhotonEnergy
-    singlet_energy = singlet_fraction*energy
-    nSingletPhotons = singlet_energy / Singlet_PhotonEnergy
     
-    Fano = 1.0
-    cond = (singlet_fraction > 0.)
-    triplet_energy = np.where( cond, GetTripletEnergy( triplet_fraction, singlet_fraction, singlet_energy ), 0. )
-    QP_energy = np.where( cond, GetQPEnergy( QP_fraction, singlet_fraction, singlet_energy ), energy )
+    singlet_fraction, triplet_fraction, _, IR_fraction = GetEnergyChannelFractions(energy, interaction)
 
-    nTripletPhotons = triplet_energy / Triplet_PhotonEnergy #(eV / (eV/ph))
+    singlet_energy = singlet_fraction*energy
+    triplet_energy = triplet_fraction*energy
 
-    scint_energy = singlet_energy + triplet_energy
+    IR_energy = IR_fraction*energy
+    nSingletExcitations_mean = singlet_energy / Singlet_ExcitationEnergy
+    nTripletExcitations_mean = triplet_energy / Triplet_ExcitationEnergy
+    nIRExcitations_mean = IR_energy / IR_ExcitationEnergy
 
-    nPhotons = nSingletPhotons + nTripletPhotons
+    nSingExcitations_actual = (np.random.normal(nSingletExcitations_mean, np.sqrt(atomic_fano*nSingletExcitations_mean))).astype(int)
+    nTripletExcitations_actual = (np.random.normal(nTripletExcitations_mean, np.sqrt(atomic_fano*nTripletExcitations_mean))).astype(int)
+    nIRExcitations_actual = (np.random.normal(nIRExcitations_mean, np.sqrt(atomic_fano*nIRExcitations_mean))).astype(int)
 
-    nSing_actual = (np.random.normal(nSingletPhotons, np.sqrt(Fano*nSingletPhotons))).astype(int)
-    cond = ( nSing_actual > 0 )
-    nSing_actual = np.where( cond, nSing_actual, 0 ).astype(int)
+    QP_energy = energy - (singlet_energy + triplet_energy + IR_energy)
+    
+    if track_unstable_QPs:
+        QP_avg_energy = Average_QPEnergy(T=T, cutoff = 6.5)
+    else:
+        QP_avg_energy = Average_QPEnergy(T=T)
 
-    nTrip_actual = (np.random.normal(nTripletPhotons, np.sqrt(Fano*nTripletPhotons)) ).astype(int)
-    cond = ( nTrip_actual > 0 )
-    nTrip_actual = np.where( cond, nTrip_actual, 0 ).astype(int)
-
-    scint_energy_actual = nSing_actual * Singlet_PhotonEnergy + nTrip_actual * Triplet_PhotonEnergy
-
-    #assume the fano fluctuations are anti-correlated with the QP energy
-    QP_energy += scint_energy - scint_energy_actual
-    cond = (QP_energy > 0)
-    QP_energy = np.where( cond, QP_energy, 0. )
-
-    nQP = (Get_Quasiparticles(QP_energy, T=T)).astype(int)
-    #if there are no photons, apply fano fluctuations directly to QPs
-    cond = ( scint_energy > 0. )
-    nQP_actual = np.where( cond, nQP, ( np.random.normal(nQP, np.sqrt(Fano*nQP)) ).astype(int) )
-
-    cond = (nQP_actual > 0)
-    nQP_actual = np.where( cond, nQP_actual, 0 ).astype(int)
-
-    return QuantaResult( nSing_actual, nTrip_actual, nQP_actual )
+    nQPs_actual = (QP_energy/QP_avg_energy).astype(int)
+    if asQuantaResult:
+        return QuantaResult( nSingExcitations_actual[0], nTripletExcitations_actual[0], nIRExcitations_actual[0], nQPs_actual[0] )
+    else:
+        return nSingExcitations_actual, nTripletExcitations_actual, nIRExcitations_actual, nQPs_actual
 
 # Quasiparticle functions
-def GetInterpFunc(d_path, lower_bound = None, upper_bound = None, reverse_xy = False):
-    """Creates an linear interpolation function from data found at the file path below,, giving us the ability to convert from resistance to temperature. 
-    returns:
-        Interpoltion function: If input exceeds range of the data function returns a NaN"""
-    data = np.loadtxt(d_path, delimiter=',')
-    if reverse_xy == False:
-        X = data[None:None,0]
-        Y = data[None:None,1]
-    else:
-        X = data[None:None,1]
-        Y = data[None:None,0]        
+def GetInterpFunc(d_path, lower_bound = None, upper_bound = None, reverse_xy = False, flip_order = False):
 
-    return interp1d(X,Y, kind = 'linear')
+    data = np.load(d_path)
+
+
+    if reverse_xy == False:
+        X = data[0,lower_bound:upper_bound]
+        Y = data[1,upper_bound:upper_bound]
+    else:
+        X = data[1,lower_bound:upper_bound]
+        Y = data[0,lower_bound:upper_bound]
+        
+    if flip_order:
+        X, Y = np.flip(X), np.flip(Y)
+    
+    return CubicSpline(X,Y, extrapolate = False)
+   
+
 
 def get_phonon_mom_energy(d_path):
     data = np.loadtxt(d_path, delimiter=',')
@@ -426,8 +473,9 @@ def get_rplus_mom_energy(d_path):
     Y = data[101:,0]
     return interp1d(X,Y, kind = 'linear')
     
-dispersion_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/dispersion_data.csv'
-velocity_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/velocity_data.csv'
+
+dispersion_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/QP_dispersion_curve.npy'
+velocity_data_path = os.path.dirname(os.path.abspath(__file__))+ '/../dispersion_curves/QP_velocity_curve.npy'
 
 QP_dispersion_base = GetInterpFunc(dispersion_data_path)
 QP_velocity_base = GetInterpFunc(velocity_data_path)
@@ -435,6 +483,9 @@ QP_velocity_base = GetInterpFunc(velocity_data_path)
 def QP_dispersion(p ):
     """
     Takes in quasiparticle momentum in keV/c; spits out quasiparticle energy in eV
+    
+    Cubic spline of data from https://link.springer.com/article/10.1007/BF00117839
+    ("Specific heat and dispersion curve for helium II" by Donnelly et. al)
 
     Parameters
     ----------
@@ -447,11 +498,14 @@ def QP_dispersion(p ):
 
     """
 
-    return QP_dispersion_base(p) * 1e-3 
+    return QP_dispersion_base(p) 
 
 def QP_velocity(p):
     """
     Takes in quasiparticle momentum in keV/c; spits out quasiparticle velocity in m/s
+
+    Cubic spline of digitized data from https://link.springer.com/article/10.1007/BF00117839
+    ("Specific heat and dispersion curve for helium II" by Donnelly et. al)
 
     Parameters
     ----------
@@ -467,9 +521,9 @@ def QP_velocity(p):
     return QP_velocity_base(p) 
 
 
-phonon_momentum_base = GetInterpFunc(dispersion_data_path, reverse_xy = True, upper_bound = 62)
-rot_minus_momentum = GetInterpFunc(dispersion_data_path, reverse_xy = True, lower_bound = 61, upper_bound = 102)
-rot_plus_momentum = GetInterpFunc(dispersion_data_path, reverse_xy = True, lower_bound = 101)
+phonon_momentum_base = GetInterpFunc(dispersion_data_path, reverse_xy = True, upper_bound = 23)
+rot_minus_momentum = GetInterpFunc(dispersion_data_path, reverse_xy = True, lower_bound = 22, upper_bound = 40, flip_order=True)
+rot_plus_momentum = GetInterpFunc(dispersion_data_path, reverse_xy = True, lower_bound = 39)
 
 def phonon_momentum(E):
     """
@@ -486,7 +540,7 @@ def phonon_momentum(E):
             QP momentum in keV/c
             
     """
-    return phonon_momentum_base(E*1000) 
+    return phonon_momentum_base(E) 
 
 def rminus_momentum(E):
     """
@@ -503,7 +557,7 @@ def rminus_momentum(E):
             QP momentum in keV/c
             
     """
-    return rot_minus_momentum(E*1000) 
+    return rot_minus_momentum(E) 
 
 def rplus_momentum(E):
     """
@@ -520,10 +574,10 @@ def rplus_momentum(E):
             QP momentum in keV/c
             
     """
-    return rot_plus_momentum(E*1000) 
+    return rot_plus_momentum(E) 
 
 
-def Random_QPmomentum(nQPs, T=2, pmin = 0, pmax = 4.6):
+def Random_QPmomentum(nQPs, T=2, pmin = .001, pmax = 4.54):
     """"
     Randomly sample Quasiparticles from a Bose-Einstein distribution with some effective temperature
 
@@ -547,34 +601,9 @@ def Random_QPmomentum(nQPs, T=2, pmin = 0, pmax = 4.6):
     """
 
     k = 8.617e-5
-    p = np.linspace(.15, 4.7, 1000) 
+    p = np.linspace(pmin, pmax, 1000) 
     probabilities = p*p/(np.exp(QP_dispersion(p)/(k*T)) - 1)
     cumulative_probabilities = np.cumsum(probabilities) / np.sum(probabilities)
     inverse_cdf = np.interp(np.random.rand(nQPs), cumulative_probabilities, p)
     return inverse_cdf
 
-
-def est_QPcount(E_total, T= 2.):
-    """
-    Estimates the number of quasiparticles that will be created given the total Quasiparticle energy.
-    Assumes that the QPs follow a BE distribution
-
-    Parameters
-    ----------
-        E_total : float
-            Sum of all of the QP's energies in eV
-        T : float
-            Effective temperature of the BE distribution. Should be O(1) K; see arXiv 2208.14474
-        FIXME : this needs some sort of Fano factor to conserve energy
-
-    Returns
-    -------
-        avg_num : float
-            Average number of quasiparticles to expect
-    """
-
-    k = 8.617e-5
-    p = np.linspace(.15, 4.7, 1000) 
-    avg_energy = np.sum(p*p/(np.exp(QP_dispersion(p)/(k*T)) - 1) * QP_dispersion(p)) / np.sum(p*p/(np.exp(QP_dispersion(p)/(k*T)) - 1))
-    avg_num = E_total/avg_energy
-    return avg_num
