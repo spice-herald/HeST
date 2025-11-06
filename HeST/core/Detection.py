@@ -656,6 +656,61 @@ def find_surface_intersection(start, direction, up_conditions, down_conditions, 
     return X1, Y1, Z1, surface_type
 
 
+def find_surface_intersection_evap(start, direction, evap, up_QP_conditions, down_conditions, up_atom_conditions, alive, max_dist, step_size):
+    """
+    Same as above, but specifically useful for the QP/quantum evaporation channel. With large numbers of detector, 
+    checking these functions becomes the code's bottleneck, even with JIT implementation. The rationale is to further
+    discriminate between upward going QPs and upward going atoms; the latter population is much smaller, and only it
+    will require checking the upper detector conditions. This saves a bunch of time in a HeRALD v1.0-like geometry
+
+    Parameters
+    ----------
+        start : array
+            3xN Array with each column denoting a particle's (x,y,z) initial position
+        direction : array
+            3xN Array with each column denoting a particle's (x,y,z) initial velocity direction 
+        up_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+        down_conditions : list of functions
+            List of functions that denote relevant boundaries for upward going particles
+
+    Returns
+    -------
+    X1, Y1, Z1 : array of floats
+        length N arrays denoting the X/Y/Z coordinates of intersection with a boundary  
+    surface_type : array of strings
+        "XY" or "Z"; defining the orientation of the boundary crossed
+
+    """
+    
+    up = (direction[2] > 0 )
+    down = ~up 
+    up = (up & alive)
+    down = (down & alive)
+    up_atom = up & evap
+    up_QP = up & ~evap
+    surface_type = np.full(len(start[0]), None)
+    X1 = np.full(len(start[0]), None, dtype=float)
+    Y1 = np.full(len(start[0]), None, dtype=float)
+    Z1 = np.full(len(start[0]), None, dtype=float)
+    if up_QP.any():
+        X1[up_QP], Y1[up_QP], Z1[up_QP], surface_type[up_QP] = intersection(start[:, up_QP], 
+                                                                            direction[:, up_QP], 
+                                                                            up_QP_conditions, 
+                                                                            max_dist, step_size)
+    if up_atom.any():
+        X1[up_atom], Y1[up_atom], Z1[up_atom], surface_type[up_atom] = intersection(start[:, up_atom], 
+                                                                direction[:, up_atom], 
+                                                                up_atom_conditions, 
+                                                                max_dist, step_size)
+    if down.any():
+        X1[down], Y1[down], Z1[down], surface_type[down] = intersection(start[:, down], 
+                                                                        direction[:, down], 
+                                                                        down_conditions,
+                                                                        max_dist, step_size)
+    return X1, Y1, Z1, surface_type
+
+
 def reflection(surface, momenta, energies, velocities, pos, direction, diffuse_prob, Andreev_prob = 0.0):
     """
     Takes in initial conditions of a particle before striking a surface 
@@ -1110,7 +1165,7 @@ def extract_number(s):
 Quasiparticle Propagation
 ##############################
 """
-def QP_propagation(nQPs, start, up_conditions, down_conditions, wall_reflection_prob = 0.0,
+def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_conditions, wall_reflection_prob = 0.0,
                    wall_diffuse_prob = 0.0, wall_Andreev_prob = 0.0, sensor_reflection_prob = 0.0,
                    sensor_diffuse_prob = 0.0, sensor_Andreev_prob = 0.0, T=2., track_unstable_QPs = False, 
                    simulate_evap_probs = True, track_subevap_QPs = False, max_dist = 10, step_size = .05, 
@@ -1247,7 +1302,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, wall_reflection_
         living = ( alive > 0.5 )
 
         #calculate when each particle will hit its next surface
-        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living, max_dist, step_size)
+        X1, Y1, Z1, surface_type = find_surface_intersection_evap(np.array([X, Y, Z]), np.array([dx, dy, dz]), evaporated, up_QP_conditions, down_conditions, up_atom_conditions, living, max_dist, step_size)
 
         # Kill particles that don't hit a surface; this shouldn't normally happen
         hit_surface_check= (surface_type != None)
@@ -2083,18 +2138,20 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.0, track_unsta
     arrivalTimes = [[] for x in range(nsensors)]
     energies = [[] for x in range(nsensors)]
 
-    up_conditions = detector.get_up_conditions()
+    up_atom_conditions = detector.get_up_conditions()
     down_conditions = detector.get_down_conditions()
 
     for i in range(nsensors):
         if detector.get_sensor(i).get_location() == 'top':
-            up_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
+            up_atom_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
         elif detector.get_sensor(i).get_location() == 'bottom':
             down_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
 
+    up_QP_conditions = detector.get_up_conditions()
+
     energyAtDeath, sensorIdsAll, evaporated, \
-    total_time, step_count, initial_momentum, paths = QP_propagation(QPs, [X, Y, Z], up_conditions=up_conditions, down_conditions=down_conditions,
-                                                                     track_unstable_QPs = track_unstable_QPs, 
+    total_time, step_count, initial_momentum, paths = QP_propagation(QPs, [X, Y, Z], up_QP_conditions=up_QP_conditions, down_conditions=down_conditions,
+                                                                     up_atom_conditions = up_atom_conditions, track_unstable_QPs = track_unstable_QPs, 
                                                                      track_subevap_QPs = track_subevap_QPs, simulate_evap_probs = simulate_evap_probs,
                                                                      T=T, plot_3d = plot_3d, 
                                                                      fixed_dir = fixed_dir, fixed_momentum = fixed_momentum, verbose=verbose, 
