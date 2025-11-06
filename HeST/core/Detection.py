@@ -560,6 +560,18 @@ class VDetector:
     Detector geometry
 
     ############################################################################# '''
+@njit
+def projection(start, direction, max_dist, step_size):
+    """
+    Projects each particle forward in time in equal spatial intervals, returning the trajectories
+    JIT compiled for speed since this is a bottleneck at large particle counts 
+    (without JIT, 5e5 particles and 200 steps takes ~14 seconds )
+    """
+    t = np.arange(0, max_dist, step_size)
+    x_line = start[0][:, None] + direction[0][:, None] * t
+    y_line = start[1][:, None] + direction[1][:, None] * t
+    z_line = start[2][:, None] + direction[2][:, None] * t
+    return x_line, y_line, z_line
 
 def intersection(start, direction, conditions, max_dist, step_size):
     """
@@ -583,15 +595,9 @@ def intersection(start, direction, conditions, max_dist, step_size):
         "XY" or "Z"; defining the orientation of the boundary crossed
 
     """
-    # if np.isscalar( start[0] ):
-    #     start = np.array([np.array([p]) for p in start])
-    # if np.isscalar( direction[0] ):
-    #     direction = np.array([np.array([p]) for p in direction])
-    t = np.arange(0, max_dist, step_size)
-    x_line = start[0][:, None] + direction[0][:, None] * t
-    y_line = start[1][:, None] + direction[1][:, None] * t
-    z_line = start[2][:, None] + direction[2][:, None] * t
 
+    x_line, y_line, z_line = projection(start, direction, max_dist, step_size)
+    t = np.arange(0, max_dist, step_size)
     dist = np.full(start.shape[1], np.inf) # Placeholders
     coords = [np.full(len(start[0]), None), np.full(len(start[0]), None), np.full(len(start[0]), None)]
     surface_type = np.full(len(start[0]), None)
