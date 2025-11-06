@@ -23,6 +23,17 @@ def HeRALD_v1(fill_height = 4.8):
     @njit #True outside the detector; false inside
     def prelim(x,y,z,x0,y0,z0):
         return (np.abs(x-x0) > sqcm_width/2) | (np.abs(y-y0) > sqcm_width/2) | (z < z0 - sqcm_thickness/2)
+    # @njit
+    # def prelim(x, y, z, x0, y0, z0):
+    #     w = .5
+    #     t = .05
+    #     n = x.size
+    #     out = np.empty(n, dtype=np.bool_)
+    #     for i in range(n):
+    #         out[i] = (x[i]-x0 > w or x[i]-x0 < -w or
+    #                 y[i]-y0 > w or y[i]-y0 < -w or
+    #                 z[i] < z0 - t)
+    #     return out
 
     def sensor_condition(x,y,z,x0,y0,z0, name):
         return prelim(x,y,z,x0,y0,z0), name
@@ -49,30 +60,39 @@ def HeRALD_v1(fill_height = 4.8):
         sensors.append(VSensor(condition))
         
     #True above the bottom; false below
+    @njit
+    def bottom(x,y,z):
+        return (z > 0)
     def bottom_conditions(x, y, z):
         boundary_type = "Z"
-        return (z > 0), boundary_type
+        return bottom(x,y,z), boundary_type
 
     #True below the top; false above
+    @njit
+    def top(x,y,z):
+        return (z < sqcm_height + .5*sqcm_thickness)
     def top_conditions(x,y,z):
         boundary_type = "Z"
-        return (z < sqcm_height + .5*sqcm_thickness), boundary_type
+        return top(x,y,z), boundary_type
 
     #True inside the walls; false outside the walls
     @njit
     def wall(x,y,z):
         return (x*x + y*y < cell_rad_sq)
-    
     def wall_conditions(x, y, z):
         boundary_type = "XY"
         return wall(x,y,z), boundary_type
 
     #True below the liquid level; false above
+    @njit
+    def liquid(x,y,z):
+        return (z < fill_height)  
     def liquid_surface(x, y, z):
         boundary_type = "Liquid"
-        return (z < fill_height), boundary_type
+        return liquid(x,y,z), boundary_type
 
     #True inside the liquid volume; false outside
+    @njit
     def liquid_conditions(x, y, z):
         return ((x*x + y*y < cell_rad_sq) & (z < fill_height) & (z > 0))
 
@@ -202,32 +222,54 @@ def HeRALD_UMass_splitCPD(fill_height = 3):
     CPD_rad = 3.5
 
     @njit
+    def sensor0(x,y,z):
+        return (z < CPD_height) | (x < .05) | (x*x+y*y > CPD_rad*CPD_rad)
     def sensor0_conditions(x, y, z):
         boundary_type = "sensor_0"
         # return ((x*x + y*y < CPD_rad*CPD_rad) & (z < CPD_height)) | (x>=0) & (x*x + y*y < CPD_rad*CPD_rad) & (z>CPD_height) | (x*x + y*y >= CPD_rad*CPD_rad) , boundary_type
-        return (z < CPD_height) | (x < .05) | (x*x+y*y > CPD_rad*CPD_rad), boundary_type
+        return sensor0(x,y,z), boundary_type
+    
     @njit
+    def sensor1(x,y,z):
+        return (z < CPD_height) | (x > -.05) | (x*x+y*y > CPD_rad*CPD_rad)
     def sensor1_conditions(x, y, z):
         boundary_type = "sensor_1"
         # return (x*x + y*y < CPD_rad*CPD_rad) &(z < CPD_height)| (x<0) & (x*x + y*y < CPD_rad*CPD_rad) & (z>CPD_height) | (x*x + y*y >= CPD_rad*CPD_rad) , boundary_type
-        return (z < CPD_height) | (x > -.05) | (x*x+y*y > CPD_rad*CPD_rad), boundary_type
-
+        return sensor1(x,y,z), boundary_type
+    
+    @njit 
+    def bottom(x,y,z):
+        return (z > 0)
+    
     def bottom_conditions(x, y, z):
         boundary_type = "Z"
-        return (z > 0), boundary_type
+        return bottom(x,y,z), boundary_type
+    
+    @njit 
+    def top(x,y,z):
+        return (z < CPD_height + 1)
     
     def top_conditions(x,y,z):
         boundary_type = "Z"
-        return (z < CPD_height + 1), boundary_type
+        return top(x,y,z), boundary_type
+    
+    @njit 
+    def wall(x,y,z):
+        return (x*x + y*y < cell_rad*cell_rad)
 
     def wall_conditions(x, y, z):
         boundary_type = "XY"
-        return (x*x + y*y < cell_rad*cell_rad), boundary_type
+        return wall(x,y,z), boundary_type
+    
+    @njit 
+    def liquid(x,y,z):
+       return (z < fill_height)
     
     def liquid_surface(x, y, z):
         boundary_type = "Liquid"
-        return (z < fill_height), boundary_type
+        return liquid(x,y,z), boundary_type
 
+    @njit
     def liquid_conditions(x, y, z):
         return ((x*x + y*y < cell_rad*cell_rad) & (z < fill_height) & (z > 0))
 

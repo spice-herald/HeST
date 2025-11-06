@@ -16,7 +16,3 @@ HeST/core/WIMP_Generation.py
 HeST/core/__init__.py
 HeST/dispersion_curves/QP_dispersion_curve.npy
 HeST/dispersion_curves/QP_velocity_curve.npy
-HeST/dispersion_curves/dispersion_data.csv
-HeST/dispersion_curves/dispersion_data.txt
-HeST/dispersion_curves/extreme_deposition.npy
-HeST/dispersion_curves/velocity_data.csv

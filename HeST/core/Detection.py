@@ -583,10 +583,10 @@ def intersection(start, direction, conditions, max_dist, step_size):
         "XY" or "Z"; defining the orientation of the boundary crossed
 
     """
-    if np.isscalar( start[0] ):
-        start = np.array([np.array([p]) for p in start])
-    if np.isscalar( direction[0] ):
-        direction = np.array([np.array([p]) for p in direction])
+    # if np.isscalar( start[0] ):
+    #     start = np.array([np.array([p]) for p in start])
+    # if np.isscalar( direction[0] ):
+    #     direction = np.array([np.array([p]) for p in direction])
     t = np.arange(0, max_dist, step_size)
     x_line = start[0][:, None] + direction[0][:, None] * t
     y_line = start[1][:, None] + direction[1][:, None] * t
@@ -1304,6 +1304,7 @@ def QP_propagation(nQPs, start, up_conditions, down_conditions, wall_reflection_
 
         # (no chance for reflection; these are definitely detected/killed)
         alive_at_dry_sensor_check = living & np.array(["sensor" in str(s) for s in surface_type]) & evaporated
+
         if alive_at_dry_sensor_check.any():
             if verbose:
                 print("Hit a Dry Sensor")
