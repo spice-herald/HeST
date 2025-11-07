@@ -576,7 +576,8 @@ def projection(start, direction, max_dist, step_size):
 def intersection(start, direction, conditions, max_dist, step_size):
     """
     Finds the surface and point of boundary intersection by  assuming rectilinear motion and interpolating.
-    Takes vector-valued positions and directions to track > 1 particle at a time. 
+    Takes vector-valued positions and directions to track > 1 particle at a time. If no intersection occurs,
+    returns -99 as a surface type by default
     
     Parameters
     ----------
@@ -600,7 +601,7 @@ def intersection(start, direction, conditions, max_dist, step_size):
     t = np.arange(0, max_dist, step_size)
     dist = np.full(start.shape[1], np.inf) # Placeholders
     coords = [np.full(len(start[0]), None), np.full(len(start[0]), None), np.full(len(start[0]), None)]
-    surface_type = np.full(len(start[0]), None)
+    surface_type = np.full(len(start[0]), -99)
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
         #if an array's max value is repeated, argmax returns the index of the first 
@@ -645,7 +646,7 @@ def find_surface_intersection(start, direction, up_conditions, down_conditions, 
     down = ~up 
     up = (up & alive)
     down = (down & alive)
-    surface_type = np.full(len(start[0]), None)
+    surface_type = np.full(len(start[0]), -99)
     X1 = np.full(len(start[0]), None, dtype=float)
     Y1 = np.full(len(start[0]), None, dtype=float)
     Z1 = np.full(len(start[0]), None, dtype=float)
@@ -689,7 +690,7 @@ def find_surface_intersection_evap(start, direction, evap, up_QP_conditions, dow
     down = (down & alive)
     up_atom = up & evap
     up_QP = up & ~evap
-    surface_type = np.full(len(start[0]), None)
+    surface_type = np.full(len(start[0]), -99)
     X1 = np.full(len(start[0]), None, dtype=float)
     Y1 = np.full(len(start[0]), None, dtype=float)
     Z1 = np.full(len(start[0]), None, dtype=float)
@@ -700,9 +701,9 @@ def find_surface_intersection_evap(start, direction, evap, up_QP_conditions, dow
                                                                             max_dist, step_size)
     if up_atom.any():
         X1[up_atom], Y1[up_atom], Z1[up_atom], surface_type[up_atom] = intersection(start[:, up_atom], 
-                                                                direction[:, up_atom], 
-                                                                up_atom_conditions, 
-                                                                max_dist, step_size)
+                                                                                    direction[:, up_atom],
+                                                                                    up_atom_conditions, 
+                                                                                    max_dist, step_size)
     if down.any():
         X1[down], Y1[down], Z1[down], surface_type[down] = intersection(start[:, down], 
                                                                         direction[:, down], 
@@ -1305,7 +1306,7 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
         X1, Y1, Z1, surface_type = find_surface_intersection_evap(np.array([X, Y, Z]), np.array([dx, dy, dz]), evaporated, up_QP_conditions, down_conditions, up_atom_conditions, living, max_dist, step_size)
 
         # Kill particles that don't hit a surface; this shouldn't normally happen
-        hit_surface_check= (surface_type != None)
+        hit_surface_check= (surface_type != -99)
         dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
         alive[living] = np.where( hit_surface_check[living], alive[living], 0)
         living = ( alive > 0.5 )
@@ -1320,7 +1321,7 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
         # Handling quasiparticles that have struck the upper helium surface #
         #####################################################################
 
-        alive_He_surface_check = living & (surface_type == "Liquid")
+        alive_He_surface_check = living & (surface_type == -3)
         if alive_He_surface_check.any():
             if verbose:
                 print("Hit Liquid/Vacuum interface")
@@ -1364,13 +1365,13 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
         ###################################################################
 
         # (no chance for reflection; these are definitely detected/killed)
-        alive_at_dry_sensor_check = living & np.array(["sensor" in str(s) for s in surface_type]) & evaporated
+        alive_at_dry_sensor_check = living & (surface_type > -.5) & evaporated
 
         if alive_at_dry_sensor_check.any():
             if verbose:
                 print("Hit a Dry Sensor")
             #Kill off particles; record relevant sensor IDs
-            sensorIdsAll[alive_at_dry_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_dry_sensor_check])
+            sensorIdsAll[alive_at_dry_sensor_check] = surface_type[alive_at_dry_sensor_check]
             energyAtDeath[alive_at_dry_sensor_check] = energy[alive_at_dry_sensor_check] 
             alive[alive_at_dry_sensor_check] = 0 
 
@@ -1385,7 +1386,8 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
         ###################################################################################
 
         # (these can either reflect or be detected/killed)
-        alive_at_wet_sensor_check = living & np.array(["sensor" in str(s) for s in surface_type]) & ~evaporated
+        alive_at_wet_sensor_check = living & (surface_type > -.5) & ~evaporated
+
         if alive_at_wet_sensor_check.any():
             if verbose:
                 print("Hit a Wet Sensor")
@@ -1411,14 +1413,14 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
             #Update alive/energy at death/sensor ID if absorbed at the detector surface 
             alive[alive_at_wet_sensor_check] = np.where(absorption_cond, 0, alive[alive_at_wet_sensor_check])
             energyAtDeath[alive_at_wet_sensor_check] = np.where(absorption_cond, energy[alive_at_wet_sensor_check], energyAtDeath[alive_at_wet_sensor_check])
-            sensorIdsAll[alive_at_wet_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_wet_sensor_check])
+            sensorIdsAll[alive_at_wet_sensor_check] = surface_type[alive_at_wet_sensor_check]
           
 
         ######################################################
         # Handle evaporated He atoms that hit a wall/ceiling #
         ######################################################
 
-        living_evaporated_wall = living & ((surface_type == 'XY') | (surface_type == 'Z')) & evaporated
+        living_evaporated_wall = living & ((surface_type == -2) | (surface_type == -1)) & evaporated
         if living_evaporated_wall.any():
             if verbose:
                 print('Hit a wall post-evaporation')
@@ -1436,13 +1438,13 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
         # Managing QPs that hit a wall before evaporation #
         ###################################################
 
-        living_not_evaporated_wall = living & ((surface_type == 'XY') | (surface_type == 'Z')) & ~evaporated
+        living_not_evaporated_wall = living & ((surface_type == -2) | (surface_type == -1)) & ~evaporated
         if living_not_evaporated_wall.any():
             if verbose:
                 print('Hit a wall pre-evaporation')            
             # sub-masks for hitting the wall and the floor
-            hit_sidewall_check = living_not_evaporated_wall & (surface_type == 'XY')
-            hit_floor_check = living_not_evaporated_wall & (surface_type == 'Z')
+            hit_sidewall_check = living_not_evaporated_wall & (surface_type == -2)
+            hit_floor_check = living_not_evaporated_wall & (surface_type == -1)
 
             #Handle reflections off the sidewalls 
             if hit_sidewall_check.any():
@@ -1581,7 +1583,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
    
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living, max_dist, step_size)
   
-        hit_surface_check = (surface_type != None)
+        hit_surface_check = (surface_type != -99)
         dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
 
         alive[living] = np.where( hit_surface_check[living], alive[living], 0)
@@ -1597,7 +1599,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
         # Managing photons crossing the Helium surface #
         ################################################
 
-        alive_He_surface_check = living & (surface_type == "Liquid")
+        alive_He_surface_check = living & (surface_type == -3)
         if alive_He_surface_check.any():
             if verbose:
                 print('Crossing Helium/vapor interface')
@@ -1611,7 +1613,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
         # Managing photons that have reached a sensor #
         ###############################################
 
-        alive_at_sensor_check = living & np.array(["sensor" in str(s) for s in surface_type])
+        alive_at_sensor_check = living & (surface_type > -.5)
         if alive_at_sensor_check.any():
             if verbose:
                 print('Reached a sensor')
@@ -1632,7 +1634,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
 
             #Update alive/energyAtDeath/sensor IDs based on absorption at the surface 
             alive[alive_at_sensor_check] = np.where(absorption_cond, 0, alive[alive_at_sensor_check])
-            sensorIdsAll[alive_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_sensor_check])
+            sensorIdsAll[alive_at_sensor_check] = surface_type[alive_at_sensor_check]
             energyAtDeath[alive_at_sensor_check] = np.where(absorption_cond, energy[alive_at_sensor_check], energyAtDeath[alive_at_sensor_check])
 
             
@@ -1640,7 +1642,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
         # Managing photons that have reached a inert boundary #
         #######################################################
 
-        alive_at_cell_check = living & ((surface_type == 'XY') | (surface_type == 'Z'))
+        alive_at_cell_check = living & ((surface_type == -2) | (surface_type == -1))
         if alive_at_cell_check.any():
             if verbose:
                 print('Reached an inert solid boundary')
@@ -1649,8 +1651,8 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
             absorption_cond = (r > wall_reflection_prob)
 
             #Submasks for hitting a floor/cieling/sidewall
-            hit_sidewall_check = alive_at_cell_check & (surface_type == 'XY')
-            hit_floor_or_ceiling_check = alive_at_cell_check & (surface_type == 'Z')
+            hit_sidewall_check = alive_at_cell_check & (surface_type == -2)
+            hit_floor_or_ceiling_check = alive_at_cell_check & (surface_type == -1)
             
             #Compute reflection kinematics for sidewall hits 
             if hit_sidewall_check.any():
@@ -1762,7 +1764,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
                                                              up_conditions, down_conditions, 
                                                              living, max_dist, step_size)
   
-        hit_surface_check = (surface_type != None)
+        hit_surface_check = (surface_type != -99)
         dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
 
         alive[living] = np.where( hit_surface_check[living], alive[living], 0)
@@ -1773,7 +1775,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
         total_time[living] = total_time[living] + np.sqrt(dist_sq)/velocity[living]  #us
 
-        hit_sensor_check  = np.array(["sensor" in str(s) for s in surface_type])
+        hit_sensor_check  = (surface_type > -.5)
 
         fluoresced_check = (fluoresced > .5)
 
@@ -1794,14 +1796,14 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
 
             #Update alive/energyAtDeath/sensor IDs 
             alive[alive_at_sensor_check] = 0
-            sensorIdsAll[alive_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_sensor_check])
+            sensorIdsAll[alive_at_sensor_check] = surface_type[alive_at_sensor_check]
             energyAtDeath[alive_at_sensor_check] = energy[alive_at_sensor_check]
 
         #########################################
         # Managing triplets that hit a sidewall #
         #########################################
 
-        alive_at_sidewall = living & (surface_type == 'XY') & ~fluoresced_check
+        alive_at_sidewall = living & (surface_type == -2) & ~fluoresced_check
         if alive_at_sidewall.any():
             if verbose:
                 print("Triplet reached a sidewall")
@@ -1837,7 +1839,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         # Managing triplets that hit a floor/ceiling #
         ##############################################
 
-        alive_at_zbound = living & (surface_type == 'Z') & ~fluoresced_check
+        alive_at_zbound = living & (surface_type == -1) & ~fluoresced_check
         if alive_at_zbound.any():
             if verbose:
                 print("Triplet reached a floor/ceiling")
@@ -1873,7 +1875,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         # Managing triplets that hit the liquid/vacuum boundary #
         #########################################################
 
-        alive_He_surface_no_fluor_check = living & (surface_type == 'liquid') & ~fluoresced_check
+        alive_He_surface_no_fluor_check = living & (surface_type == -3) & ~fluoresced_check
         if alive_He_surface_no_fluor_check.any():
             if verbose:
                 print("Triplet reached the liquid surface")
@@ -1891,7 +1893,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         # Managing photons that cross the helium boundary #
         ###################################################
 
-        alive_He_surface_check = living & (surface_type == "Liquid") & fluoresced_check
+        alive_He_surface_check = living & (surface_type == -3) & fluoresced_check
         if alive_He_surface_check.any():
             if verbose:
                 print("Photon reached the liquid surface")
@@ -1905,7 +1907,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         # Managing photons that hit an inert surface #
         ##############################################
 
-        alive_at_cell_check = living & ((surface_type == 'XY') | (surface_type == 'Z')) & fluoresced_check
+        alive_at_cell_check = living & ((surface_type == -2) | (surface_type == -1)) & fluoresced_check
         if alive_at_cell_check.any():
             if verbose:
                 print("Photon reached a cell boundary")
@@ -1914,8 +1916,8 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
             absorption_cond = (r > photon_wall_reflection_prob)
 
             #Submasks for hitting a floor/cieling/sidewall
-            hit_sidewall_check = alive_at_cell_check & (surface_type == 'XY')
-            hit_floor_or_ceiling_check = alive_at_cell_check & (surface_type == 'Z')
+            hit_sidewall_check = alive_at_cell_check & (surface_type == -2)
+            hit_floor_or_ceiling_check = alive_at_cell_check & (surface_type == -1)
             
             #Compute reflection kinematics for sidewall hits 
             if hit_sidewall_check.any():
@@ -1945,7 +1947,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         # Managing photons that have reached a sensor #
         ###############################################
 
-        alive_at_sensor_check = living & np.array(["sensor" in str(s) for s in surface_type]) & fluoresced_check
+        alive_at_sensor_check = living & (surface_type > -.5) & fluoresced_check
         if alive_at_sensor_check.any():
             if verbose:
                 print("Photon reached a sensor")
@@ -1966,7 +1968,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
 
             #Update alive/energyAtDeath/sensor IDs based on absorption at the surface 
             alive[alive_at_sensor_check] = np.where(absorption_cond, 0, alive[alive_at_sensor_check])
-            sensorIdsAll[alive_at_sensor_check] = np.vectorize(extract_number)(surface_type[alive_at_sensor_check])
+            sensorIdsAll[alive_at_sensor_check] = surface_type[alive_at_sensor_check]
             energyAtDeath[alive_at_sensor_check] = np.where(absorption_cond, energy[alive_at_sensor_check], energyAtDeath[alive_at_sensor_check])
 
 

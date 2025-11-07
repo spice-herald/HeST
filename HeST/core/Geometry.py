@@ -2,6 +2,16 @@ from .Detection import VSensor, VDetector
 import numpy as np
 from numba import njit
 
+
+# We define the conditional functions to return both a boolearn describing whether 
+# a given point is inside or outside a surface boundary (or an array therof,) as well
+# as an integer code describing the surface type. The key for the latter is below
+# -1 : vertical planes (e.g. the floor and ceiling)
+# -2 : cylindrically symmetrical walls (e.g. the cell walls)
+# -3 : liquid/vapor boundary
+# All non-negative integers are reserved for sensors, with the sensor index (beginning
+# from 0) corresponding to the integer code
+
 def HeRALD_v1(fill_height = 4.8):
     sqcm_thickness = .1 #cm
     sqcm_width = 1 #cm
@@ -35,8 +45,8 @@ def HeRALD_v1(fill_height = 4.8):
     #                 z[i] < z0 - t)
     #     return out
 
-    def sensor_condition(x,y,z,x0,y0,z0, name):
-        return prelim(x,y,z,x0,y0,z0), name
+    def sensor_condition(x,y,z,x0,y0,z0, index):
+        return prelim(x,y,z,x0,y0,z0), index
 
     def create_sensors_condition(x0,y0,z0, name):
         return lambda x,y,z: sensor_condition(x,y,z, x0, y0, z0, name)
@@ -49,7 +59,7 @@ def HeRALD_v1(fill_height = 4.8):
             if array_map[i,j] > .5:
                 x0, y0 = (i - 2.5)*sqcm_pitch, (j - 2.5)*sqcm_pitch, 
                 # print(x0,y0)
-                sensor_conditions.append(create_sensors_condition(x0,y0, sqcm_height+ .5*sqcm_thickness, 'sensor_'+str(sensor_id)))
+                sensor_conditions.append(create_sensors_condition(x0,y0, sqcm_height+ .5*sqcm_thickness, int(sensor_id)))
                 sensor_locations[str(sensor_id)] = (x0,y0)
                 sensor_id += 1
 
@@ -64,32 +74,28 @@ def HeRALD_v1(fill_height = 4.8):
     def bottom(x,y,z):
         return (z > 0)
     def bottom_conditions(x, y, z):
-        boundary_type = "Z"
-        return bottom(x,y,z), boundary_type
+        return bottom(x,y,z), -1
 
     #True below the top; false above
     @njit
     def top(x,y,z):
         return (z < sqcm_height + .5*sqcm_thickness)
     def top_conditions(x,y,z):
-        boundary_type = "Z"
-        return top(x,y,z), boundary_type
+        return top(x,y,z), -1
 
     #True inside the walls; false outside the walls
     @njit
     def wall(x,y,z):
         return (x*x + y*y < cell_rad_sq)
     def wall_conditions(x, y, z):
-        boundary_type = "XY"
-        return wall(x,y,z), boundary_type
+        return wall(x,y,z), -2
 
     #True below the liquid level; false above
     @njit
     def liquid(x,y,z):
         return (z < fill_height)  
     def liquid_surface(x, y, z):
-        boundary_type = "Liquid"
-        return liquid(x,y,z), boundary_type
+        return liquid(x,y,z), -3
 
     #True inside the liquid volume; false outside
     @njit
@@ -125,17 +131,17 @@ def HeRALD_LBNL(fill_height=3):
     def sensor_bot(x,y,z,x0,y0,z0):
         return (np.abs(x-x0) > sensor_width/2) | (np.abs(y-y0) > sensor_width/2) | (z > z0 + sensor_thickness/2)
     
-    def sensor_condition_top(x,y,z,x0,y0,z0, name):
-        return sensor_top(x,y,z,x0,y0,z0), name
+    def sensor_condition_top(x,y,z,x0,y0,z0, index):
+        return sensor_top(x,y,z,x0,y0,z0), index
     
-    def sensor_condition_bot(x,y,z,x0,y0,z0, name):
-        return sensor_bot(x,y,z,x0,y0,z0), name
+    def sensor_condition_bot(x,y,z,x0,y0,z0, index):
+        return sensor_bot(x,y,z,x0,y0,z0), index
     
-    def create_sensors_condition_top(x0,y0,z0, name):
-        return lambda x,y,z: sensor_condition_top(x,y,z, x0, y0, z0, name)
+    def create_sensors_condition_top(x0,y0,z0, index):
+        return lambda x,y,z: sensor_condition_top(x,y,z, x0, y0, z0, index)
 
-    def create_sensors_condition_bot(x0,y0,z0, name):
-        return lambda x,y,z: sensor_condition_bot(x,y,z, x0, y0, z0, name)
+    def create_sensors_condition_bot(x0,y0,z0, index):
+        return lambda x,y,z: sensor_condition_bot(x,y,z, x0, y0, z0, index)
 
     array_map = np.array([[1,1],
                           [1,1]])
@@ -149,7 +155,7 @@ def HeRALD_LBNL(fill_height=3):
             if array_map[i,j] > .5:
                 x0, y0 = (i - .5)*sensor_XY_pitch, (j - .5)*sensor_XY_pitch, 
                 # print(x0,y0)
-                sensor_conditions.append(create_sensors_condition_top(x0,y0, sensor_Z_pitch, 'sensor_'+str(sensor_id)))
+                sensor_conditions.append(create_sensors_condition_top(x0,y0, sensor_Z_pitch, int(sensor_id)))
                 sensor_locations[str(sensor_id)] = (x0,y0)
                 sensor_id += 1
 
@@ -158,7 +164,7 @@ def HeRALD_LBNL(fill_height=3):
             if array_map[i,j] > .5:
                 x0, y0 = (i - .5)*sensor_XY_pitch, (j - .5)*sensor_XY_pitch, 
                 # print(x0,y0)
-                sensor_conditions.append(create_sensors_condition_bot(x0,y0, 0, 'sensor_'+str(sensor_id)))
+                sensor_conditions.append(create_sensors_condition_bot(x0,y0, 0, int(sensor_id)))
                 sensor_locations[str(sensor_id)] = (x0,y0)
                 sensor_id += 1
     locations = ['top', 'top', 'top', 'top', 'bottom', 'bottom', 'bottom', 'bottom']
@@ -173,28 +179,28 @@ def HeRALD_LBNL(fill_height=3):
         return (z > 0)
 
     def bottom_conditions(x, y, z):
-        return bottom(x,y,z), "Z"
+        return bottom(x,y,z), -1
     
     @njit    
     def top(x,y,z):
         return (z < sensor_Z_pitch)
 
     def top_conditions(x,y,z):
-        return top(x,y,z), "Z"
+        return top(x,y,z), -1
     
     @njit  
     def wall(x,y,z):
         return (x*x + y*y < cell_rad_sq)
 
     def wall_conditions(x, y, z):
-        return wall(x,y,z), "XY"
+        return wall(x,y,z), -2
     
     @njit    
     def liquid(x,y,z):
         return (z < fill_height)
 
     def liquid_surface(x, y, z):
-        return liquid(x,y,z), "Liquid"
+        return liquid(x,y,z), -3
     
     @njit
     def liquid_conditions(x, y, z):
@@ -225,49 +231,37 @@ def HeRALD_UMass_splitCPD(fill_height = 3):
     def sensor0(x,y,z):
         return (z < CPD_height) | (x < .05) | (x*x+y*y > CPD_rad*CPD_rad)
     def sensor0_conditions(x, y, z):
-        boundary_type = "sensor_0"
-        # return ((x*x + y*y < CPD_rad*CPD_rad) & (z < CPD_height)) | (x>=0) & (x*x + y*y < CPD_rad*CPD_rad) & (z>CPD_height) | (x*x + y*y >= CPD_rad*CPD_rad) , boundary_type
-        return sensor0(x,y,z), boundary_type
+        return sensor0(x,y,z), 0
     
     @njit
     def sensor1(x,y,z):
         return (z < CPD_height) | (x > -.05) | (x*x+y*y > CPD_rad*CPD_rad)
     def sensor1_conditions(x, y, z):
-        boundary_type = "sensor_1"
-        # return (x*x + y*y < CPD_rad*CPD_rad) &(z < CPD_height)| (x<0) & (x*x + y*y < CPD_rad*CPD_rad) & (z>CPD_height) | (x*x + y*y >= CPD_rad*CPD_rad) , boundary_type
-        return sensor1(x,y,z), boundary_type
+        return sensor1(x,y,z), 1
     
     @njit 
     def bottom(x,y,z):
         return (z > 0)
-    
     def bottom_conditions(x, y, z):
-        boundary_type = "Z"
-        return bottom(x,y,z), boundary_type
+        return bottom(x,y,z), -1
     
     @njit 
     def top(x,y,z):
         return (z < CPD_height + 1)
-    
     def top_conditions(x,y,z):
-        boundary_type = "Z"
-        return top(x,y,z), boundary_type
+        return top(x,y,z), -1
     
     @njit 
     def wall(x,y,z):
         return (x*x + y*y < cell_rad*cell_rad)
-
     def wall_conditions(x, y, z):
-        boundary_type = "XY"
-        return wall(x,y,z), boundary_type
+        return wall(x,y,z), -2
     
     @njit 
     def liquid(x,y,z):
        return (z < fill_height)
-    
     def liquid_surface(x, y, z):
-        boundary_type = "Liquid"
-        return liquid(x,y,z), boundary_type
+        return liquid(x,y,z), -3
 
     @njit
     def liquid_conditions(x, y, z):
