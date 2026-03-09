@@ -573,6 +573,10 @@ def projection(start, direction, max_dist, step_size):
     z_line = start[2][:, None] + direction[2][:, None] * t
     return x_line, y_line, z_line
 
+@njit
+def find_first_intersect(cut):
+    return np.argmax(~cut, axis=1)
+
 def intersection(start, direction, conditions, max_dist, step_size):
     """
     Finds the surface and point of boundary intersection by  assuming rectilinear motion and interpolating.
@@ -605,7 +609,7 @@ def intersection(start, direction, conditions, max_dist, step_size):
     for cond in conditions:
         cut, surface = cond(x_line, y_line, z_line)
         #if an array's max value is repeated, argmax returns the index of the first 
-        first_ints = np.argmax(~cut, axis=1)
+        first_ints = find_first_intersect(cut)
         valid = (first_ints > 0)
         d = np.where(valid, t[first_ints], np.inf)
         update = d < dist
@@ -978,7 +982,7 @@ def triplet_fluorescence(surface, directions, positions):
         
 
 
-def evaporation(momentum, energy, direction):
+def evaporation(momentum, energy, direction, Vb = .000620):
     """
     Gives the momentum/direction of an evaporated He4 atom given the kinematics of the 
     QP that evaporats it
@@ -988,8 +992,6 @@ def evaporation(momentum, energy, direction):
             QP momentum in keV/c
         energy : float/array of floats
             QP energy in eV
-        velocity : float/array of floats
-            QP velocity in 100 m/s
         direction : 3-tuple
             unit vector denoting the QP's direction
     Returns
@@ -1011,7 +1013,7 @@ def evaporation(momentum, energy, direction):
     # https://journals.aps.org/pr/abstract/10.1103/PhysRev.69.242
     # Interpolation of data to 8 mK. This table is consistent with 
     # other values used in classically modeling quantum evaporation
-    Vb = 0.000620 # eV 
+    # Vb = 0.000620 # eV 
 
     pxi, pyi, pzi = momentum * dx, momentum * dy, momentum * dz
     pxf, pyf = pxi, pyi
@@ -1169,7 +1171,7 @@ Quasiparticle Propagation
 def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_conditions, wall_reflection_prob = 0.0,
                    wall_diffuse_prob = 0.0, wall_Andreev_prob = 0.0, sensor_reflection_prob = 0.0,
                    sensor_diffuse_prob = 0.0, sensor_Andreev_prob = 0.0, T=2., track_unstable_QPs = False, 
-                   simulate_evap_probs = True, track_subevap_QPs = False, max_dist = 10, step_size = .05, 
+                   simulate_evap_probs = True, A=1, B=1, vb = .00062, pcutoff = None, track_subevap_QPs = False, max_dist = 10, step_size = .05, 
                    plot_3d=False, fixed_dir = None, fixed_momentum = None, verbose = False):
     """
     Tracking of Quasiparticles through medium. 
@@ -1279,6 +1281,10 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
 
     alive = np.where( cond, 0, alive)
 
+    if pcutoff is not None:
+        cond = (momentum  > pcutoff)
+        alive = np.where( cond, 0, alive)
+
     #velocity and energy, both arrays of length nQP
     velocity = QP_velocity(momentum) #m/s
     energy = QP_dispersion(momentum) #eV
@@ -1296,7 +1302,7 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
     particles_y[:, 0][living] = Y[living]
     particles_z[:, 0][living] = Z[living]
 
-    while np.sum(alive) > 0: # loop until all particles are dead
+    while living.any(): # loop until all particles are dead
         
         n+=1
 
@@ -1329,7 +1335,7 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
             incident_angles = np.arccos(dz)
             r = np.random.random(len(surface_type))
             if simulate_evap_probs:
-                evap_bools = r < evap_prob(momentum)
+                evap_bools = r < evap_prob(momentum,A,B)
             elif not simulate_evap_probs: #Default to evaporation
                 evap_bools = r > 0
   
@@ -1348,7 +1354,8 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
             if a_L_evap.any():
                 dx[a_L_evap], dy[a_L_evap], dz[a_L_evap], \
                 momentum[a_L_evap], energy[a_L_evap], velocity[a_L_evap] = evaporation(momentum[a_L_evap],energy[a_L_evap],
-                                                                                    direction=(dx[a_L_evap], dy[a_L_evap], dz[a_L_evap]))
+                                                                                    direction=(dx[a_L_evap], dy[a_L_evap], dz[a_L_evap]),
+                                                                                    Vb = vb)
                 evaporated[a_L_evap] = True
 
             #Update new positions
@@ -1575,7 +1582,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
     particles_y[:, 0][living] = Y[living]
     particles_z[:, 0][living] = Z[living]
 
-    while np.sum(alive) > 0:
+    while alive.any():
 
 
         n+=1
@@ -1754,7 +1761,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
     particles_y[:, 0][living] = Y[living]
     particles_z[:, 0][living] = Z[living]
 
-    while np.sum(alive) > 0:
+    while alive.any():
 
         n+=1
         living = ( alive > 0.5 )
@@ -2069,9 +2076,10 @@ def gamma_propagation(nGammas, start, MFP, conditions, plot_3d = False):
 
 
 def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.0, track_unstable_QPs = False, 
-                         track_subevap_QPs = False, simulate_evap_probs = True, max_dist = 10, 
-                         step_size =.05,plot_3d = False, fixed_dir = None, fixed_momentum = None, 
-                         verbose = False, debug = False):
+                         track_subevap_QPs = False, simulate_evap_probs = True, A = 1, B = 1,
+                         vb = .00062, pcutoff = None,
+                         max_dist = 10, step_size =.05,plot_3d = False, fixed_dir = None, 
+                         fixed_momentum = None, verbose = False, debug = False):
     '''
     Performs a simulation of quasiparticle propagation inside your detector. Depending on whether the useMap is True,
     this will either use pre-generated detection probabilities, or use pregenerated collection efficiency
@@ -2155,7 +2163,7 @@ def GetEvaporationSignal(detector, QPs, X, Y, Z, useMap=True, T=2.0, track_unsta
     total_time, step_count, initial_momentum, paths = QP_propagation(QPs, [X, Y, Z], up_QP_conditions=up_QP_conditions, down_conditions=down_conditions,
                                                                      up_atom_conditions = up_atom_conditions, track_unstable_QPs = track_unstable_QPs, 
                                                                      track_subevap_QPs = track_subevap_QPs, simulate_evap_probs = simulate_evap_probs,
-                                                                     T=T, plot_3d = plot_3d, 
+                                                                     T=T, A=A, B=B, vb = vb, pcutoff = pcutoff, plot_3d = plot_3d, 
                                                                      fixed_dir = fixed_dir, fixed_momentum = fixed_momentum, verbose=verbose, 
                                                                      wall_reflection_prob = detector.get_QP_wall_reflection_prob(), 
                                                                      wall_diffuse_prob = detector.get_QP_wall_diffuse_prob(),

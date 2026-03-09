@@ -96,147 +96,162 @@ class HestSignal:
                 raise ValueError("Number of channels must match")
             
 
+# Polynomial functions to get the energy channel partitioning for ERs and NRs; outdated Work by Greg R but we'll leave it for posterity (for now)
 
-class HestNoiseFactory:
-    """
-    Noise that handles the noise across our CPDs. Creates sample noise from a single PSD 
-    (assuming all channels have identical noise spectra and that noise is uncorrelated 
-    between the two
+# def ER_QP_eFraction(energy):
+#     """
+#     Returns fraction of a electroic recoil energy partitioning into quasiparticles
+#     """
+#     a, b, c, d = 100., 2.98839372, 13.89437102, 0.33504361
+#     frac =  a/((energy-c)**b) + d
+#     condition = (frac > 1.0) | (energy < 19.77)
+#     return np.where( condition, 1.0, frac )
 
-    Parameters
-    ----------
-        CSD : array
-            1-D array (in the case of PSD) or 3-D array (in the case of CSD) that defines the noise
-        fs : float
-            Sampling frequency with which the CSD is recorded
-        nsamples : int
-            Number of samples for the desired noise. For now it is mandated that this be an integer 
-            multiple of the number of samples over which the user-give CSD is defined  
+# def ER_triplet_eFraction(energy):
+#     """
+#     Returns fraction of a electronic recoil energy partitioning into triplets
+#     """
+#     a, b, c, d, e, f, g = 14.69346932, 1.17858385, 17.60481951, 0.95286617, 0.23929604, 13.81618099, 4.92551215
+#     frac = f/(energy-a)**b - g/(energy-c)**d + e
+#     condition = ( frac < 0. ) | (energy < 19.77 )
+#     return np.where( condition, 0., frac )
 
-    """
-    def __init__(self, PSD, fs, nsamples):
-        if not PSD.ndim == 1:
-            raise ValueError("PSD should have 1 dimension ")
-        if nsamples % len(PSD) != 0:
-            raise ValueError("nsamples should be an integer multiple of the PSD sample count")
+# def ER_singlet_eFraction(energy):
+#     """
+#     Returns fraction of a electronic recoil energy partitioning into singlets
+#     """
+#     a, b, c, d = 2.05492076e+03, 5.93097885, 3.3091563, 0.31773768
+#     frac = -a/(energy-b)**c + d
+#     condition = (frac < 0.) | (energy < 19.77)
+#     return np.where( condition, 0., frac )
 
-        self.nsamples = nsamples
-        self.fs = fs
-        self.PSD = PSD
-  
-        self.gen_interpolated_PSD()
+# def NR_QP_eFraction(energy):
+#     """
+#     Returns fraction of a nuclear recoil energy partitioning into quasiparticles
+#     """
+#     logE = np.log10(energy)
+#     a, b, c, d, e, f, g =  1.37928294, 1.62782641, -3.64361207, 2.25802903, 0.07210282, -0.31126613, -0.00495869
+#     frac = a/logE/logE + b/logE + c + d*logE + e*logE*logE + f*logE*logE*logE + \
+#            e*logE*logE*logE*logE + g*logE*logE*logE*logE*logE
+#     condition = (frac > 1.0) | (energy < 19.77)
+#     return np.where( condition, 1.0, frac )
 
+# def NR_triplet_eFraction(energy):
+#     """
+#     Returns fraction of a nuclear recoil energy partitioning into triplets
+#     """
+#     x = np.log10(energy)
+#     a, b, c, d, e, f, g, h =  -7.73003451, 17.1117164, -12.0306409, 4.388470, -2.5361635, 0.661017, -8.41417e-2,  4.2301e-03
+#     frac =  a/x + b + c*x + d*x*x*x + e*x*x*x*x + f*x*x*x*x*x + g*x*x*x*x*x*x + h*x*x*x*x*x*x*x
+#     condition = (frac < 0.) | (energy < 19.77)
+#     return np.where( condition, 0., frac)
 
+# def NR_singlet_eFraction(energy):
+#     """
+#     Returns fraction of a nuclear recoil energy partitioning into singlets
+#     """
 
-    def gen_interpolated_PSD(self):
-        """
-        Generate PSD that's interpolated at the necessary frequencies to produce noise of 
-        the length nsamples. Frequencies that would require extrapolation are manually set
-        to zero
+#     x = np.log10(energy)
+#     a, b, c, d = -6.74959165e+01,  1.70997665e+02, -1.42571001e+02,  8.45017681e+01
+#     e, f, g, h = -6.92781245e+01,  2.87318953e+01, -7.05306162e+00,  1.03483204e+00
+#     i, j  = -8.39958299e-02,  2.90462675e-03
+#     frac = a/x + b + c*x + d*x*x*x + e*x*x*x*x + f*x*x*x*x*x + g*x*x*x*x*x*x + h*x*x*x*x*x*x*x + i*x*x*x*x*x*x*x*x + j*x*x*x*x*x*x*x*x*x
+#     condition = (frac < 0.) | (energy < 19.77)
+#     return np.where( condition, 0., frac)
 
-        """
-        self.PSD_interp = np.ones( self.nsamples )*(0+0j)
-        freqs = fftfreq(self.PSD.size, self.fs)
-        freqs_interp = fftfreq(self.nsamples, self.fs)
-        self.freqs = freqs
-        self.freqs_interp = freqs_interp
+#Interpolated functions digitized from Hertel et. al
 
-        self.PSD_interp = np.where( (0 < np.abs(freqs_interp)) & (np.abs(freqs_interp) < freqs[1]), 0+0j, interp1d(freqs, self.PSD, bounds_error=False, fill_value = 0+0j)(freqs_interp))
+singlet_ER_x = np.array([0.0, 19.77, 21.63, 23.22, 25.15, 
+                         30.60, 39.39, 48.88, 72.51, 100.93, 
+                         155.05, 242.75, 354.78, 593.74, 1015.77,
+                         2351.09, 4698.44, 10186.55, 32983.81, 100000.0])
+singlet_ER_y = np.array([0.0, 0.00, 0.086, 0.147, 0.200, 
+                         0.253, 0.295, 0.320, 0.325, 0.321, 
+                         0.315, 0.313, 0.311, 0.310, 0.311, 
+                         0.314, 0.315, 0.317, 0.320, 0.321])
 
-        norm = len(self.PSD_interp) * self.fs
-        self.fourier_stds = np.sqrt(self.PSD_interp * norm)
-
-    def gen_noise(self):
-        """
-        Generate noise from our interpolated PSD
-        """
-        n = self.nsamples
-        half = (n - 1) // 2
-        even = (n % 2 == 0)
-
-
-        zs = (np.random.normal(size=half) + 1j * np.random.normal(size=half)) / np.sqrt(2)
-
-        if even:
-            zs_final = np.empty(n, dtype=np.complex128)
-            zs_final[0] = 0.0
-            zs_final[1:half+1] = zs
-            zs_final[half+1] = np.random.normal()  # Nyquist frequency term
-            zs_final[half+2:] = np.conjugate(zs[::-1])
-        else:
-            zs_final = np.empty(n, dtype=np.complex128)
-            zs_final[0] = 0.0
-            zs_final[1:half+1] = zs
-            zs_final[half+1:] = np.conjugate(zs[::-1])
-
-        zs_final *= self.fourier_stds
-
-        return np.fft.ifft(zs_final).real
-
-
-# Polynomial functions to get the energy channel partitioning for ERs and NRs
-
-def ER_QP_eFraction(energy):
-    """
-    Returns fraction of a electroic recoil energy partitioning into quasiparticles
-    """
-    a, b, c, d = 100., 2.98839372, 13.89437102, 0.33504361
-    frac =  a/((energy-c)**b) + d
-    condition = (frac > 1.0) | (energy < 19.77)
-    return np.where( condition, 1.0, frac )
-
-def ER_triplet_eFraction(energy):
-    """
-    Returns fraction of a electronic recoil energy partitioning into triplets
-    """
-    a, b, c, d, e, f, g = 14.69346932, 1.17858385, 17.60481951, 0.95286617, 0.23929604, 13.81618099, 4.92551215
-    frac = f/(energy-a)**b - g/(energy-c)**d + e
-    condition = ( frac < 0. ) | (energy < 19.77 )
-    return np.where( condition, 0., frac )
+singlet_ER = interp1d(singlet_ER_x, singlet_ER_y)
 
 def ER_singlet_eFraction(energy):
-    """
-    Returns fraction of a electronic recoil energy partitioning into singlets
-    """
-    a, b, c, d = 2.05492076e+03, 5.93097885, 3.3091563, 0.31773768
-    frac = -a/(energy-b)**c + d
-    condition = (frac < 0.) | (energy < 19.77)
-    return np.where( condition, 0., frac )
+    return np.where(energy > 19.77, singlet_ER(energy), 0)
 
-def NR_QP_eFraction(energy):
-    """
-    Returns fraction of a nuclear recoil energy partitioning into quasiparticles
-    """
-    logE = np.log10(energy)
-    a, b, c, d, e, f, g =  1.37928294, 1.62782641, -3.64361207, 2.25802903, 0.07210282, -0.31126613, -0.00495869
-    frac = a/logE/logE + b/logE + c + d*logE + e*logE*logE + f*logE*logE*logE + \
-           e*logE*logE*logE*logE + g*logE*logE*logE*logE*logE
-    condition = (frac > 1.0) | (energy < 19.77)
-    return np.where( condition, 1.0, frac )
+triplet_ER_x = np.array([0.0, 19.77, 20.47, 20.93, 21.32, 
+                         21.89, 23.24, 24.93, 27.24, 29.35, 
+                         33.46, 40.26, 51.43, 65.68, 91.09, 
+                         133.70, 203.26, 380.10, 691.15, 1333.10, 
+                         3014.93, 7330.22, 14626.38, 27595.60, 100000.0])
+triplet_ER_y = np.array([0.0, 0.0, 0.1062, 0.194, 0.276, 
+                         0.347, 0.381, 0.398, 0.381, 0.357, 
+                         0.326, 0.298, 0.265, 0.241, 0.237, 
+                         0.239, 0.240, 0.242, 0.241, 0.241, 
+                         0.240, 0.239, 0.237, 0.237, 0.235])
 
-def NR_triplet_eFraction(energy):
-    """
-    Returns fraction of a nuclear recoil energy partitioning into triplets
-    """
-    x = np.log10(energy)
-    a, b, c, d, e, f, g, h =  -7.73003451, 17.1117164, -12.0306409, 4.388470, -2.5361635, 0.661017, -8.41417e-2,  4.2301e-03
-    frac =  a/x + b + c*x + d*x*x*x + e*x*x*x*x + f*x*x*x*x*x + g*x*x*x*x*x*x + h*x*x*x*x*x*x*x
-    condition = (frac < 0.) | (energy < 19.77)
-    return np.where( condition, 0., frac)
+triplet_ER = interp1d(triplet_ER_x, triplet_ER_y)
+
+def ER_triplet_eFraction(energy):
+    return np.where(energy > 19.77, triplet_ER(energy), 0)
+
+qp_ER_x = np.array([0.0, 19.77, 20.48, 20.77, 21.04, 
+                    21.49, 21.90, 23.16, 24.32, 25.42, 
+                    30.20, 47.20, 59.84, 91.77, 158.16, 
+                    410.34, 891.33, 2009.58, 4556.31, 10420.55, 
+                    22034.62, 52973.97, 100000.0])
+qp_ER_y = np.array([1.0, 1.0, 0.865, 0.775, 0.702, 
+                    0.641, 0.553, 0.467, 0.395, 0.382, 
+                    0.373, 0.346, 0.339, 0.333, 0.334, 
+                    0.334, 0.334, 0.334, 0.334, 0.334, 
+                    0.334, 0.334, 0.334])
+
+qp_ER = interp1d(qp_ER_x, qp_ER_y)
+
+def ER_QP_eFraction(energy):
+    return np.where(energy > 19.77, qp_ER(energy), 1)
+
+singlet_NR_x = np.array([0.0, 19.77, 21.21, 24.29, 28.33, 
+                         35.70, 54.04, 105.43, 242.56, 415.38, 
+                         716.00, 1275.54, 2083.48, 2989.18, 3960.88, 
+                         5021.45, 6538.47, 8513.37, 12679.53, 15885.66, 
+                         21654.95, 30359.14, 50407.77, 100000.0])
+singlet_NR_y = np.array([0.0, 0.0, 0.023, 0.064, 0.088, 
+                         0.109, 0.125, 0.142, 0.164, 0.183, 
+                         0.208, 0.244, 0.274, 0.293, 0.297, 
+                         0.294, 0.282, 0.259, 0.217, 0.192, 
+                         0.163, 0.140, 0.120, 0.106])
+
+singlet_NR = interp1d(singlet_NR_x, singlet_NR_y)
 
 def NR_singlet_eFraction(energy):
-    """
-    Returns fraction of a nuclear recoil energy partitioning into singlets
-    """
+    return np.where(energy > 19.77, singlet_NR(energy), 0)
 
-    x = np.log10(energy)
-    a, b, c, d = -6.74959165e+01,  1.70997665e+02, -1.42571001e+02,  8.45017681e+01
-    e, f, g, h = -6.92781245e+01,  2.87318953e+01, -7.05306162e+00,  1.03483204e+00
-    i, j  = -8.39958299e-02,  2.90462675e-03
-    frac = a/x + b + c*x + d*x*x*x + e*x*x*x*x + f*x*x*x*x*x + g*x*x*x*x*x*x + h*x*x*x*x*x*x*x + i*x*x*x*x*x*x*x*x + j*x*x*x*x*x*x*x*x*x
-    condition = (frac < 0.) | (energy < 19.77)
-    return np.where( condition, 0., frac)
+triplet_NR_x = np.array([0.0, 19.77, 24.88, 37.04, 62.83, 
+                         155.50, 391.65, 653.32, 1028.13, 1627.49, 
+                         2760.35, 4480.65, 7169.79, 11793.22, 18683.25, 
+                         29959.84, 46394.00, 73580.83, 100000.0])
+triplet_NR_y = np.array([0.0, 0.0, 0.0104, 0.0186, 0.0251, 
+                         0.0286, 0.0350, 0.0406, 0.0481, 0.0588, 
+                         0.0817, 0.115, 0.167, 0.229, 0.279, 
+                         0.309, 0.317, 0.317, 0.313])
 
+triplet_NR = interp1d(triplet_NR_x, triplet_NR_y)
+
+def NR_triplet_eFraction(energy):
+    return np.where(energy > 19.77, triplet_NR(energy), 0)
+
+qp_NR_x = np.array([0.0, 19.77, 21.53, 23.72, 27.54, 
+                    34.60, 48.80, 69.98, 99.78, 158.60, 
+                    219.41, 318.34, 507.09, 749.17, 1137.36, 
+                    1957.43, 3517.02, 5763.96, 9036.91, 16679.51, 
+                    29633.11, 47310.22, 100000.0])
+qp_NR_y = np.array([1.0, 1.0, 0.970, 0.933, 0.900, 
+                    0.872, 0.852, 0.840, 0.826, 0.813, 
+                    0.803, 0.787, 0.764, 0.738, 0.704, 
+                    0.650, 0.584, 0.534, 0.497, 0.468, 
+                    0.464, 0.469, 0.487])
+
+qp_NR = interp1d(qp_NR_x, qp_NR_y)
+
+def NR_QP_eFraction(energy):
+    return np.where(energy > 19.77, qp_NR(energy), 1)
 
 #combine the above functions into a single function
 def GetEnergyChannelFractions(energy, interaction):
@@ -285,7 +300,7 @@ def GetEnergyChannelFractions(energy, interaction):
 
     return singlet, triplet, QP, IR
 
-def Average_QPEnergy(T= 2., upper_bound = 4.54):
+def Average_QPEnergy(T = 2., upper_bound = 4.54):
     """
     Estimates the number of quasiparticles that will be created given the total Quasiparticle energy.
     Defaults to assuming that the QPs follow a BE distribution 
@@ -359,50 +374,6 @@ def Sim_AbsYields(energy, interaction):
             return 1
 
     return singlet, triplet, QP, IR
-
-#HeST main yields function
-def GetSingletYields(energy, interaction):
-
-
-    detection_gain = 0.052 #to get the LBL yields to match with the ~35% energy fraction in prompt yields
-
-    meanERyield = 1.25049e-3# +/- 0.03153 phe/eV
-    meanNRyield = 0.477545e-3 # +/- 0.006395 phe/eV
-
-    ERsingletFraction = 0.85824614
-    NRsingletFraction = 0.72643866
-    cond = (energy < 19.77)
-    energy = np.where(cond, 0., energy)
-    if interaction == "ER":
-        return meanERyield*energy/detection_gain * ERsingletFraction #convert from phe/keV to n_photons
-    else:
-        if interaction == "NR":
-            return meanNRyield*energy/detection_gain *NRsingletFraction #convert from phe/keV to n_photons
-        else:
-            print("Please specify ER or NR for interaction type!")
-
-
-def Get_Quasiparticles(qp_energy, T=2.): 
-    #returns the mean number of quasiparticles given 
-    # the energy in eV in the QP channel
-    
-    #based on a power law fit after calculating the nQPs
-    # using random sampling of the dispersion relation
-    # given a Bose-Einstein distribution for nD/dp
-    Coeff =  1156.25/pow(T, 3.58) + 1137.3
-    Pow   = 1.0 - 8.74e-4*np.exp(-T/0.264) 
- 
-    #slope_t2, b_t2 = 1244.04521473, 29.10987933 #linear fit params
-    #return slope_t2*qp_energy + b_t2
-    return  Coeff*pow(qp_energy,Pow) 
-
-
-def GetTripletEnergy( triplet_fraction, singlet_fraction, singlet_energy ):
-    return (triplet_fraction/singlet_fraction) * singlet_energy
-
-def GetQPEnergy( QP_fraction, singlet_fraction, singlet_energy ):
-    return (QP_fraction/singlet_fraction) * singlet_energy
-
 
 def GetQuanta(energy, interaction, T=2., atomic_fano = 1.0, asQuantaResult = True, track_unstable_QPs = False):
     if np.isscalar(energy):
