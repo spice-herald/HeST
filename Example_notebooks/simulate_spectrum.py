@@ -81,6 +81,11 @@ MAX_DIST = 10.0                     # Maximum propagation distance in cm
 QP_TEMPERATURE = 2.0                # Effective temperature for QP momentum sampling (K)
 MAX_QP_SIMULATED = 100000           # Max QPs to propagate per event; extras are downsampled
                                     # and results scaled by weight = n_qp / MAX_QP_SIMULATED
+
+# Fano factors — per-channel variance control (1.0 = Poisson, <1 = sub-Poisson)
+FANO_SINGLET = 1.0
+FANO_TRIPLET = 1.0
+FANO_IR = 1.0
 # ============================================================
 
 
@@ -101,6 +106,9 @@ def get_detector_config():
         max_dist=MAX_DIST,
         qp_temperature=QP_TEMPERATURE,
         max_qp_simulated=MAX_QP_SIMULATED,
+        fano_singlet=FANO_SINGLET,
+        fano_triplet=FANO_TRIPLET,
+        fano_ir=FANO_IR,
     )
 
 
@@ -141,7 +149,7 @@ def random_position_in_cylinder(cell_radius, fill_height):
 
 
 def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
-                   save_raw=False):
+                   save_raw=False, fano_singlet=1.0, fano_triplet=1.0, fano_ir=1.0):
     """
     Simulate a single recoil event and return per-channel results.
 
@@ -156,7 +164,8 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
     sensor_time   : (4, nsensors) array or None — per-sensor mean arrival time
     raw_signals : list of (HestSignal, weight) or None — raw signal objects per channel
     """
-    quanta = H.GetQuanta(energy, recoil_type, T=QP_TEMPERATURE)
+    quanta = H.GetQuanta(energy, recoil_type, T=QP_TEMPERATURE,
+                         fano_singlet=fano_singlet, fano_triplet=fano_triplet, fano_IR=fano_ir)
     n_singlet = quanta.get_nSingletPhotons()
     n_triplet = quanta.get_nTripletMolecules()
     n_ir = quanta.get_nIRPhotons()
@@ -348,11 +357,23 @@ def main():
                         help="Max QPs to simulate per event (overrides config block)")
     parser.add_argument("--output", default=None,
                         help="Output file path (auto-generated from parameters if omitted)")
+    parser.add_argument("--fano_singlet", type=float, default=None,
+                        help="Fano factor for singlet channel (overrides config block)")
+    parser.add_argument("--fano_triplet", type=float, default=None,
+                        help="Fano factor for triplet channel (overrides config block)")
+    parser.add_argument("--fano_ir", type=float, default=None,
+                        help="Fano factor for IR channel (overrides config block)")
     args = parser.parse_args()
 
-    global MAX_QP_SIMULATED
+    global MAX_QP_SIMULATED, FANO_SINGLET, FANO_TRIPLET, FANO_IR
     if args.max_qp is not None:
         MAX_QP_SIMULATED = args.max_qp
+    if args.fano_singlet is not None:
+        FANO_SINGLET = args.fano_singlet
+    if args.fano_triplet is not None:
+        FANO_TRIPLET = args.fano_triplet
+    if args.fano_ir is not None:
+        FANO_IR = args.fano_ir
 
     if args.spectrum == "wimp" and args.recoil_type != "NR":
         print("Warning: WIMP spectrum forces recoil_type=NR, ignoring --recoil_type")
