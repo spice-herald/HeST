@@ -1502,9 +1502,10 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
 
     return energyAtDeath, sensorIdsAll, evaporated, total_time, step_count, initial_momentum, paths
         
-def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_reflection_prob = 0.0, 
+def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_reflection_prob = 0.0,
                        wall_diffuse_prob = 0.0, sensor_reflection_prob = 0.0,  sensor_diffuse_prob = 0.0,
-                       max_dist = 10, step_size = .05, plot_3d=False, fixed_dir = None, verbose = False):
+                       max_dist = 10, step_size = .05, plot_3d=False, fixed_dir = None, verbose = False,
+                       photon_energy = 16.0):
     """
     Tracking of photons through medium. 
    
@@ -1571,7 +1572,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
     velocity = 29979.2/1.03 #speed of light in He4 cm/us    
     # cond = (velocity > 0.)
     # alive = np.where( cond, alive, 0.)
-    energy = np.ones(nPhotons) * 16.0
+    energy = np.ones(nPhotons) * photon_energy
     energyAtDeath = np.zeros(nPhotons, dtype=float)
     step_count = np.zeros_like(alive)
     #-1 is default, indicating not hitting  a sensor
@@ -2381,13 +2382,14 @@ def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, use
         elif detector.get_sensor(i).get_location() == 'bottom':
             down_conditions.append( (detector.get_sensor(i)).get_surface_condition() ) 
 
-    energyAtDeath, sensorIdsAll, total_time, step_count, paths = photon_propagation(nPhotons, [X,Y,Z], up_conditions, down_conditions, 
+    energyAtDeath, sensorIdsAll, total_time, step_count, paths = photon_propagation(nPhotons, [X,Y,Z], up_conditions, down_conditions,
                                                                                     wall_reflection_prob = detector.get_IR_wall_reflection_prob(),
                                                                                     wall_diffuse_prob = detector.get_IR_wall_diffuse_prob(),
                                                                                     sensor_reflection_prob= detector.get_IR_sensor_reflection_prob(),
                                                                                     sensor_diffuse_prob = detector.get_IR_sensor_diffuse_prob(),
                                                                                     max_dist = max_dist, step_size = step_size,
-                                                                                    plot_3d = plot_3d, fixed_dir = fixed_dir, verbose = verbose )
+                                                                                    plot_3d = plot_3d, fixed_dir = fixed_dir, verbose = verbose,
+                                                                                    photon_energy = 1.0 )
     
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)

@@ -375,34 +375,56 @@ def Sim_AbsYields(energy, interaction):
 
     return singlet, triplet, QP, IR
 
-def GetQuanta(energy, interaction, T=2., atomic_fano = 1.0, asQuantaResult = True, track_unstable_QPs = False):
+def _fano_draw(mean, fano):
+    """Draw integer quanta count with variance = fano * mean.
+    Uses Poisson when fano == 1, Gaussian approximation otherwise.
+    """
+    mean = np.asarray(mean, dtype=float)
+    result = np.zeros_like(mean, dtype=int)
+    pos = mean > 0
+    if not np.any(pos):
+        return result
+
+    mu = mean[pos]
+    if fano == 1.0:
+        result[pos] = np.random.poisson(mu).astype(int)
+    else:
+        sigma = np.sqrt(fano * mu)
+        result[pos] = np.maximum(0, np.round(np.random.normal(mu, sigma))).astype(int)
+    return result
+
+def GetQuanta(energy, interaction, T=2., fano_singlet=1.0, fano_triplet=1.0, fano_IR=1.0,
+              asQuantaResult=True, track_unstable_QPs=False):
     if np.isscalar(energy):
         energy = np.array([energy])
-    
+
     singlet_fraction, triplet_fraction, _, IR_fraction = GetEnergyChannelFractions(energy, interaction)
 
-    singlet_energy = singlet_fraction*energy
-    triplet_energy = triplet_fraction*energy
+    singlet_energy = singlet_fraction * energy
+    triplet_energy = triplet_fraction * energy
+    IR_energy = IR_fraction * energy
 
-    IR_energy = IR_fraction*energy
     nSingletExcitations_mean = singlet_energy / Singlet_ExcitationEnergy
     nTripletExcitations_mean = triplet_energy / Triplet_ExcitationEnergy
     nIRExcitations_mean = IR_energy / IR_ExcitationEnergy
 
-    nSingExcitations_actual = (np.random.normal(nSingletExcitations_mean, np.sqrt(atomic_fano*nSingletExcitations_mean))).astype(int)
-    nTripletExcitations_actual = (np.random.normal(nTripletExcitations_mean, np.sqrt(atomic_fano*nTripletExcitations_mean))).astype(int)
-    nIRExcitations_actual = (np.random.normal(nIRExcitations_mean, np.sqrt(atomic_fano*nIRExcitations_mean))).astype(int)
+    nSingExcitations_actual = _fano_draw(nSingletExcitations_mean, fano_singlet)
+    nTripletExcitations_actual = _fano_draw(nTripletExcitations_mean, fano_triplet)
+    nIRExcitations_actual = _fano_draw(nIRExcitations_mean, fano_IR)
 
-    QP_energy = energy - (singlet_energy + triplet_energy + IR_energy)
-    
+    atomic_energy_consumed = (nSingExcitations_actual * Singlet_ExcitationEnergy
+                              + nTripletExcitations_actual * Triplet_ExcitationEnergy
+                              + nIRExcitations_actual * IR_ExcitationEnergy)
+    QP_energy = np.maximum(0, energy - atomic_energy_consumed)
+
     if track_unstable_QPs:
-        QP_avg_energy = Average_QPEnergy(T=T, cutoff = 6.5)
+        QP_avg_energy = Average_QPEnergy(T=T, cutoff=6.5)
     else:
         QP_avg_energy = Average_QPEnergy(T=T)
 
-    nQPs_actual = (QP_energy/QP_avg_energy).astype(int)
+    nQPs_actual = (QP_energy / QP_avg_energy).astype(int)
     if asQuantaResult:
-        return QuantaResult( nSingExcitations_actual[0], nTripletExcitations_actual[0], nIRExcitations_actual[0], nQPs_actual[0] )
+        return QuantaResult(nSingExcitations_actual[0], nTripletExcitations_actual[0], nIRExcitations_actual[0], nQPs_actual[0])
     else:
         return nSingExcitations_actual, nTripletExcitations_actual, nIRExcitations_actual, nQPs_actual
 
