@@ -1751,7 +1751,9 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
     
     alive = np.ones(nTriplets, dtype=int)
     fluoresced = np.zeros(nTriplets, dtype=int)
-    velocity = np.full(nTriplets,.0001) #1 m/s; placeholder for now    
+    # Ballistic excimer velocity at T < 110 mK, SVP;
+    # Zmeev et al., JLTP 171, 207 (2013)
+    velocity = np.full(nTriplets, 0.00017) # 1.7 m/s in cm/us
     energy = np.full(nTriplets, 16.0)
     energyAtDeath = np.zeros(nTriplets, dtype=float)
     step_count = np.zeros_like(alive)
