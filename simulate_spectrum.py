@@ -169,6 +169,8 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
     n_singlet = quanta.get_nSingletPhotons()
     n_triplet = quanta.get_nTripletMolecules()
     n_ir = quanta.get_nIRPhotons()
+    n_ir_ion = quanta.get_nIRPhotons_ion()
+    n_ir_exc = quanta.get_nIRPhotons_exc()
     n_qp = quanta.get_nQuasiparticles()
 
     n_generated = np.array([n_singlet, n_triplet, n_ir, n_qp])
@@ -228,7 +230,13 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
             raw_signals[1] = (sig, 1.0)
 
     if n_ir > 0:
-        sig = H.GetIRSignal(detector, n_ir, x, y, z, **sim_kwargs)
+        sig = H.HestSignal([[] for _ in range(nsensors)], [[] for _ in range(nsensors)])
+        if n_ir_ion > 0:
+            sig = sig + H.GetIRSignal(detector, n_ir_ion, x, y, z,
+                                      photon_energy=H.IR_ENERGY_PER_IONIZATION, **sim_kwargs)
+        if n_ir_exc > 0:
+            sig = sig + H.GetIRSignal(detector, n_ir_exc, x, y, z,
+                                      photon_energy=H.IR_ENERGY_PER_EXCITATION, **sim_kwargs)
         collect_signal(sig, 2)
         if save_raw:
             raw_signals[2] = (sig, 1.0)

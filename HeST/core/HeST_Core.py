@@ -16,7 +16,16 @@ from numba import njit
 # total molecular excitation energy
 Singlet_ExcitationEnergy = 15.5 # eV; derived from potential curves
 Triplet_ExcitationEnergy = 18.0 # eV; derived from potential curves
-IR_ExcitationEnergy = 1 # eV
+
+# W-value and excitation/ionization ratio for helium
+# ICRU Report 31 (1979); Seidel et al., NIM A 489, 189 (2002)
+W_ION = 43.0 # eV per ion pair
+# Platzman, Int. J. Appl. Radiat. Isot. 10, 116 (1961); Seidel et al.
+NEX_OVER_NI = 0.45
+
+# IR energy per atomic event; Hertel et al. (1810.06283v2) Sec. III.A
+IR_ENERGY_PER_IONIZATION = 4.0 # eV
+IR_ENERGY_PER_EXCITATION = 0.5 # eV
 
 
 # Singlet_ExcitationEnergy = 18.1 # eV; derived from potential curves
@@ -29,30 +38,39 @@ class QuantaResult:
 
     Attributes
     ----------
-        SingletPhotons : float
+        SingletPhotons : int
             # of singlet photons generated in a recoil
-        TripletMolecules : float
-            # of long-lived triplet photons generated
-        IRPhotons : float
-            @ of IR photons generated
-        Quasiparticles : float
-            # of quasiparticles generated in the 
+        TripletMolecules : int
+            # of long-lived triplet molecules generated
+        IRPhotons_ion : int
+            # of IR photons from ionization events (4 eV each)
+        IRPhotons_exc : int
+            # of IR photons from excitation events (0.5 eV each)
+        Quasiparticles : int
+            # of quasiparticles generated
     """
-    def __init__(self, SingletPhotons, TripletMolecules, IRPhotons, Quasiparticles):
+    def __init__(self, SingletPhotons, TripletMolecules, IRPhotons_ion, IRPhotons_exc, Quasiparticles):
         self.SingletPhotons = SingletPhotons
         self.TripletMolecules = TripletMolecules
-        self.IRPhotons = IRPhotons
+        self.IRPhotons_ion = IRPhotons_ion
+        self.IRPhotons_exc = IRPhotons_exc
         self.Quasiparticles = Quasiparticles
 
     def get_nSingletPhotons(self):
         return self.SingletPhotons
     
     def get_nIRPhotons(self):
-        return self.IRPhotons
-    
+        return self.IRPhotons_ion + self.IRPhotons_exc
+
+    def get_nIRPhotons_ion(self):
+        return self.IRPhotons_ion
+
+    def get_nIRPhotons_exc(self):
+        return self.IRPhotons_exc
+
     def get_nTripletMolecules(self):
         return self.TripletMolecules
-    
+
     def get_nQuasiparticles(self):
         return self.Quasiparticles
     
@@ -402,19 +420,24 @@ def GetQuanta(energy, interaction, T=2., fano_singlet=1.0, fano_triplet=1.0, fan
 
     singlet_energy = singlet_fraction * energy
     triplet_energy = triplet_fraction * energy
-    IR_energy = IR_fraction * energy
 
     nSingletExcitations_mean = singlet_energy / Singlet_ExcitationEnergy
     nTripletExcitations_mean = triplet_energy / Triplet_ExcitationEnergy
-    nIRExcitations_mean = IR_energy / IR_ExcitationEnergy
+
+    # IR quanta from the Hertel/Seidel model: one IR quantum per
+    # ionization (4 eV) and one per excitation (0.5 eV)
+    Ni = energy / W_ION
+    Nex = NEX_OVER_NI * Ni
 
     nSingExcitations_actual = _fano_draw(nSingletExcitations_mean, fano_singlet)
     nTripletExcitations_actual = _fano_draw(nTripletExcitations_mean, fano_triplet)
-    nIRExcitations_actual = _fano_draw(nIRExcitations_mean, fano_IR)
+    nIR_ion_actual = _fano_draw(Ni, fano_IR)
+    nIR_exc_actual = _fano_draw(Nex, fano_IR)
 
     atomic_energy_consumed = (nSingExcitations_actual * Singlet_ExcitationEnergy
                               + nTripletExcitations_actual * Triplet_ExcitationEnergy
-                              + nIRExcitations_actual * IR_ExcitationEnergy)
+                              + nIR_ion_actual * IR_ENERGY_PER_IONIZATION
+                              + nIR_exc_actual * IR_ENERGY_PER_EXCITATION)
     QP_energy = np.maximum(0, energy - atomic_energy_consumed)
 
     if track_unstable_QPs:
@@ -424,9 +447,10 @@ def GetQuanta(energy, interaction, T=2., fano_singlet=1.0, fano_triplet=1.0, fan
 
     nQPs_actual = (QP_energy / QP_avg_energy).astype(int)
     if asQuantaResult:
-        return QuantaResult(nSingExcitations_actual[0], nTripletExcitations_actual[0], nIRExcitations_actual[0], nQPs_actual[0])
+        return QuantaResult(nSingExcitations_actual[0], nTripletExcitations_actual[0],
+                            nIR_ion_actual[0], nIR_exc_actual[0], nQPs_actual[0])
     else:
-        return nSingExcitations_actual, nTripletExcitations_actual, nIRExcitations_actual, nQPs_actual
+        return nSingExcitations_actual, nTripletExcitations_actual, nIR_ion_actual, nIR_exc_actual, nQPs_actual
 
 # Quasiparticle functions
 def GetInterpFunc(d_path, lower_bound = None, upper_bound = None, reverse_xy = False, flip_order = False):

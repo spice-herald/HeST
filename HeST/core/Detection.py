@@ -3,7 +3,8 @@ import numpy as np
 import re
 import matplotlib.pyplot as plt
 from .HeST_Core import HestSignal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, \
-                       get_rplus_mom_energy, phonon_momentum, rminus_momentum, rplus_momentum, QuantaResult,  GetQuanta
+                       get_rplus_mom_energy, phonon_momentum, rminus_momentum, rplus_momentum, QuantaResult, GetQuanta, \
+                       IR_ENERGY_PER_IONIZATION, IR_ENERGY_PER_EXCITATION
 from numba import jit
 import os
 from skimage import measure
@@ -2316,8 +2317,9 @@ def GetTripletSignal(detector, nTriplets, X,Y,Z, max_dist = 10, step_size = .05,
         return energyAtDeath, sensorIdsAll, total_time, step_count, paths
 
 
-def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, useMap = True, 
-                plot_3d = False, fixed_dir = None, verbose = False, debug = False):
+def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, useMap = True,
+                plot_3d = False, fixed_dir = None, verbose = False, debug = False,
+                photon_energy = 2.91):
     """
     Parameters
     ----------
@@ -2389,7 +2391,7 @@ def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, use
                                                                                     sensor_diffuse_prob = detector.get_IR_sensor_diffuse_prob(),
                                                                                     max_dist = max_dist, step_size = step_size,
                                                                                     plot_3d = plot_3d, fixed_dir = fixed_dir, verbose = verbose,
-                                                                                    photon_energy = 1.0 )
+                                                                                    photon_energy = photon_energy )
     
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)
@@ -2499,7 +2501,11 @@ def Simulate(detector, recoil_type, recoil_energy, X, Y, Z, T = 2.,
                                        max_dist = max_dist, step_size = step_size )
     if verbose:
         print('Staring IR Sim')
-    signal = signal + GetIRSignal(detector, Quanta.get_nIRPhotons(), X = X, Y = Y, Z = Z, 
-                                  max_dist = max_dist, step_size = step_size )
+    signal = signal + GetIRSignal(detector, Quanta.get_nIRPhotons_ion(), X = X, Y = Y, Z = Z,
+                                  max_dist = max_dist, step_size = step_size,
+                                  photon_energy = IR_ENERGY_PER_IONIZATION )
+    signal = signal + GetIRSignal(detector, Quanta.get_nIRPhotons_exc(), X = X, Y = Y, Z = Z,
+                                  max_dist = max_dist, step_size = step_size,
+                                  photon_energy = IR_ENERGY_PER_EXCITATION )
     
     return signal
