@@ -274,7 +274,10 @@ class VDetector:
     def get_up_conditions(self):
         return [self.liquid_surface, self.wall_conditions, self.top_condition]
     def get_down_conditions(self):
-        return [self.wall_conditions, self.bottom_condition]
+        def vapor_surface(x, y, z):
+            cond, sid = self.liquid_surface(x, y, z)
+            return ~cond, sid
+        return [vapor_surface, self.wall_conditions, self.bottom_condition]
     def get_conditions(self):
         return [self.liquid_surface,  self.wall_conditions, self.top_condition, self.wall_conditions, self.bottom_condition]
     def get_LCEmap(self):
@@ -1700,35 +1703,54 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
             if verbose:
                 print('Crossing Helium/vapor interface')
 
-            n1 = HE_REFRACTIVE_INDEX
-            sin_theta = np.sqrt(dx[alive_He_surface_check]**2 + dy[alive_He_surface_check]**2)
-            tir_mask = sin_theta > (1.0 / n1)
+            n_he = HE_REFRACTIVE_INDEX
+            going_up = alive_He_surface_check & (dz > 0)
+            going_down = alive_He_surface_check & (dz < 0)
 
-            tir_full = np.zeros(nPhotons, dtype=bool)
-            tir_full[alive_He_surface_check] = tir_mask
+            # Upward: liquid → vacuum (TIR possible)
+            if going_up.any():
+                sin_theta = np.sqrt(dx[going_up]**2 + dy[going_up]**2)
+                tir_mask = sin_theta > (1.0 / n_he)
 
-            # Total internal reflection
-            if tir_mask.any():
-                dz[tir_full] = -dz[tir_full]
-                X[tir_full] = X1[tir_full]
-                Y[tir_full] = Y1[tir_full]
-                Z[tir_full] = Z1[tir_full]
+                tir_full = np.zeros(nPhotons, dtype=bool)
+                tir_full[going_up] = tir_mask
 
-            # Snell's law refraction
-            transmit_full = alive_He_surface_check & ~tir_full
-            if transmit_full.any():
-                sin_theta_t = n1 * np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2)
-                cos_theta_t = np.sqrt(np.maximum(1.0 - sin_theta_t**2, 0.0))
-                dx[transmit_full] = n1 * dx[transmit_full]
-                dy[transmit_full] = n1 * dy[transmit_full]
-                dz[transmit_full] = cos_theta_t
-                norm = np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2 + dz[transmit_full]**2)
-                dx[transmit_full] /= norm
-                dy[transmit_full] /= norm
-                dz[transmit_full] /= norm
-                X[transmit_full] = X1[transmit_full]
-                Y[transmit_full] = Y1[transmit_full]
-                Z[transmit_full] = Z1[transmit_full] + step_size
+                if tir_mask.any():
+                    dz[tir_full] = -dz[tir_full]
+                    X[tir_full] = X1[tir_full]
+                    Y[tir_full] = Y1[tir_full]
+                    Z[tir_full] = Z1[tir_full]
+
+                transmit_up = going_up & ~tir_full
+                if transmit_up.any():
+                    sin_t = n_he * np.sqrt(dx[transmit_up]**2 + dy[transmit_up]**2)
+                    cos_t = np.sqrt(np.maximum(1.0 - sin_t**2, 0.0))
+                    dx[transmit_up] = n_he * dx[transmit_up]
+                    dy[transmit_up] = n_he * dy[transmit_up]
+                    dz[transmit_up] = cos_t
+                    norm = np.sqrt(dx[transmit_up]**2 + dy[transmit_up]**2 + dz[transmit_up]**2)
+                    dx[transmit_up] /= norm
+                    dy[transmit_up] /= norm
+                    dz[transmit_up] /= norm
+                    X[transmit_up] = X1[transmit_up]
+                    Y[transmit_up] = Y1[transmit_up]
+                    Z[transmit_up] = Z1[transmit_up] + step_size
+
+            # Downward: vacuum → liquid (no TIR, refract toward normal)
+            if going_down.any():
+                sin_theta_i = np.sqrt(dx[going_down]**2 + dy[going_down]**2)
+                sin_t = sin_theta_i / n_he
+                cos_t = np.sqrt(np.maximum(1.0 - sin_t**2, 0.0))
+                dx[going_down] = dx[going_down] / n_he
+                dy[going_down] = dy[going_down] / n_he
+                dz[going_down] = -cos_t
+                norm = np.sqrt(dx[going_down]**2 + dy[going_down]**2 + dz[going_down]**2)
+                dx[going_down] /= norm
+                dy[going_down] /= norm
+                dz[going_down] /= norm
+                X[going_down] = X1[going_down]
+                Y[going_down] = Y1[going_down]
+                Z[going_down] = Z1[going_down] - step_size
 
 
         ###############################################
@@ -2068,35 +2090,54 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
             if verbose:
                 print("Photon reached the liquid surface")
 
-            n1 = HE_REFRACTIVE_INDEX
-            sin_theta = np.sqrt(dx[alive_He_surface_check]**2 + dy[alive_He_surface_check]**2)
-            tir_mask = sin_theta > (1.0 / n1)
+            n_he = HE_REFRACTIVE_INDEX
+            going_up = alive_He_surface_check & (dz > 0)
+            going_down = alive_He_surface_check & (dz < 0)
 
-            tir_full = np.zeros(nTriplets, dtype=bool)
-            tir_full[alive_He_surface_check] = tir_mask
+            # Upward: liquid → vacuum (TIR possible)
+            if going_up.any():
+                sin_theta = np.sqrt(dx[going_up]**2 + dy[going_up]**2)
+                tir_mask = sin_theta > (1.0 / n_he)
 
-            # Total internal reflection
-            if tir_mask.any():
-                dz[tir_full] = -dz[tir_full]
-                X[tir_full] = X1[tir_full]
-                Y[tir_full] = Y1[tir_full]
-                Z[tir_full] = Z1[tir_full]
+                tir_full = np.zeros(nTriplets, dtype=bool)
+                tir_full[going_up] = tir_mask
 
-            # Snell's law refraction
-            transmit_full = alive_He_surface_check & ~tir_full
-            if transmit_full.any():
-                sin_theta_t = n1 * np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2)
-                cos_theta_t = np.sqrt(np.maximum(1.0 - sin_theta_t**2, 0.0))
-                dx[transmit_full] = n1 * dx[transmit_full]
-                dy[transmit_full] = n1 * dy[transmit_full]
-                dz[transmit_full] = cos_theta_t
-                norm = np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2 + dz[transmit_full]**2)
-                dx[transmit_full] /= norm
-                dy[transmit_full] /= norm
-                dz[transmit_full] /= norm
-                X[transmit_full] = X1[transmit_full]
-                Y[transmit_full] = Y1[transmit_full]
-                Z[transmit_full] = Z1[transmit_full] + step_size
+                if tir_mask.any():
+                    dz[tir_full] = -dz[tir_full]
+                    X[tir_full] = X1[tir_full]
+                    Y[tir_full] = Y1[tir_full]
+                    Z[tir_full] = Z1[tir_full]
+
+                transmit_up = going_up & ~tir_full
+                if transmit_up.any():
+                    sin_t = n_he * np.sqrt(dx[transmit_up]**2 + dy[transmit_up]**2)
+                    cos_t = np.sqrt(np.maximum(1.0 - sin_t**2, 0.0))
+                    dx[transmit_up] = n_he * dx[transmit_up]
+                    dy[transmit_up] = n_he * dy[transmit_up]
+                    dz[transmit_up] = cos_t
+                    norm = np.sqrt(dx[transmit_up]**2 + dy[transmit_up]**2 + dz[transmit_up]**2)
+                    dx[transmit_up] /= norm
+                    dy[transmit_up] /= norm
+                    dz[transmit_up] /= norm
+                    X[transmit_up] = X1[transmit_up]
+                    Y[transmit_up] = Y1[transmit_up]
+                    Z[transmit_up] = Z1[transmit_up] + step_size
+
+            # Downward: vacuum → liquid (no TIR, refract toward normal)
+            if going_down.any():
+                sin_theta_i = np.sqrt(dx[going_down]**2 + dy[going_down]**2)
+                sin_t = sin_theta_i / n_he
+                cos_t = np.sqrt(np.maximum(1.0 - sin_t**2, 0.0))
+                dx[going_down] = dx[going_down] / n_he
+                dy[going_down] = dy[going_down] / n_he
+                dz[going_down] = -cos_t
+                norm = np.sqrt(dx[going_down]**2 + dy[going_down]**2 + dz[going_down]**2)
+                dx[going_down] /= norm
+                dy[going_down] /= norm
+                dz[going_down] /= norm
+                X[going_down] = X1[going_down]
+                Y[going_down] = Y1[going_down]
+                Z[going_down] = Z1[going_down] - step_size
 
 
         ##############################################

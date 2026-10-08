@@ -415,14 +415,19 @@ def _fano_draw(mean, fano):
     return result
 
 def GetQuanta(energy, interaction, T=2., fano_singlet=1.0, fano_triplet=1.0, fano_IR=1.0,
-              asQuantaResult=True, track_unstable_QPs=False):
+              asQuantaResult=True, track_unstable_QPs=False, singlet_fraction=None):
     if np.isscalar(energy):
         energy = np.array([energy])
 
-    singlet_fraction, triplet_fraction, _, IR_fraction = GetEnergyChannelFractions(energy, interaction)
+    singlet_frac, triplet_frac, _, IR_fraction = GetEnergyChannelFractions(energy, interaction)
 
-    singlet_energy = singlet_fraction * energy
-    triplet_energy = triplet_fraction * energy
+    singlet_energy = singlet_frac * energy
+    triplet_energy = triplet_frac * energy
+
+    if singlet_fraction is not None:
+        total_uv_energy = singlet_energy + triplet_energy
+        singlet_energy = singlet_fraction * total_uv_energy
+        triplet_energy = (1.0 - singlet_fraction) * total_uv_energy
 
     nSingletExcitations_mean = singlet_energy / Singlet_ExcitationEnergy
     nTripletExcitations_mean = triplet_energy / Triplet_ExcitationEnergy

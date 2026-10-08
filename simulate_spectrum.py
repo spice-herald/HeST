@@ -94,6 +94,11 @@ TRIPLET_FLUORESCENCE_YIELD = 1.0    # Fraction of wall-incident triplets that fl
                                     # (vs. non-radiative quench). 1.0 for Cu walls
                                     # (HeRALD demo, 2307.11877)
 
+# Singlet:triplet branching ratio
+SINGLET_FRACTION = None             # Fraction of total UV energy in singlet channel.
+                                    # None = use digitized Hertel yield curves (energy-dependent).
+                                    # 0.5 = equal energy split. Effective r~0.6 at high ER.
+
 # Simulation parameters
 STEP_SIZE = 0.05                    # Ray-marching step size in cm
 MAX_DIST = 10.0                     # Maximum propagation distance in cm
@@ -139,6 +144,7 @@ def get_detector_config():
         fano_singlet=FANO_SINGLET,
         fano_triplet=FANO_TRIPLET,
         fano_ir=FANO_IR,
+        singlet_fraction=SINGLET_FRACTION,
     )
 
 
@@ -206,7 +212,8 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
     raw_signals : list of (HestSignal, weight) or None — raw signal objects per channel
     """
     quanta = H.GetQuanta(energy, recoil_type, T=QP_TEMPERATURE,
-                         fano_singlet=fano_singlet, fano_triplet=fano_triplet, fano_IR=fano_ir)
+                         fano_singlet=fano_singlet, fano_triplet=fano_triplet, fano_IR=fano_ir,
+                         singlet_fraction=SINGLET_FRACTION)
     n_singlet = quanta.get_nSingletPhotons()
     n_triplet = quanta.get_nTripletMolecules()
     n_ir = quanta.get_nIRPhotons()
