@@ -4,7 +4,7 @@ import re
 import matplotlib.pyplot as plt
 from .HeST_Core import HestSignal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, \
                        get_rplus_mom_energy, phonon_momentum, rminus_momentum, rplus_momentum, QuantaResult, GetQuanta, \
-                       IR_ENERGY_PER_IONIZATION, IR_ENERGY_PER_EXCITATION
+                       IR_ENERGY_PER_IONIZATION, IR_ENERGY_PER_EXCITATION, HE_REFRACTIVE_INDEX
 from numba import jit
 import os
 from skimage import measure
@@ -125,7 +125,13 @@ class VDetector:
                  IR_sensor_reflection_prob=0., IR_sensor_diffuse_prob=0., IR_wall_reflection_prob=0., IR_wall_diffuse_prob=0.,
                  QP_sensor_reflection_prob=0., QP_sensor_diffuse_prob=0., QP_sensor_Andreev_prob=0.,
                  QP_wall_reflection_prob=0., QP_wall_diffuse_prob=0., QP_wall_Andreev_prob=0.,
-                 triplet_fluorescence_yield=1.0):
+                 triplet_fluorescence_yield=1.0,
+                 UV_rayleigh_mfp=None,
+                 vuv_photon_energy=16.0,
+                 IR_ion_wall_reflection_prob=None, IR_ion_wall_diffuse_prob=None,
+                 IR_ion_sensor_reflection_prob=None, IR_ion_sensor_diffuse_prob=None,
+                 IR_exc_wall_reflection_prob=None, IR_exc_wall_diffuse_prob=None,
+                 IR_exc_sensor_reflection_prob=None, IR_exc_sensor_diffuse_prob=None):
 
 
 
@@ -159,11 +165,22 @@ class VDetector:
         self.QP_wall_Andreev_prob = QP_wall_Andreev_prob
 
         self.triplet_fluorescence_yield = triplet_fluorescence_yield
+        self.UV_rayleigh_mfp = UV_rayleigh_mfp
+        self.vuv_photon_energy = vuv_photon_energy
+
+        self.IR_ion_wall_reflection_prob = IR_ion_wall_reflection_prob
+        self.IR_ion_wall_diffuse_prob = IR_ion_wall_diffuse_prob
+        self.IR_ion_sensor_reflection_prob = IR_ion_sensor_reflection_prob
+        self.IR_ion_sensor_diffuse_prob = IR_ion_sensor_diffuse_prob
+        self.IR_exc_wall_reflection_prob = IR_exc_wall_reflection_prob
+        self.IR_exc_wall_diffuse_prob = IR_exc_wall_diffuse_prob
+        self.IR_exc_sensor_reflection_prob = IR_exc_sensor_reflection_prob
+        self.IR_exc_sensor_diffuse_prob = IR_exc_sensor_diffuse_prob
 
 
     """
     Setters
-    """   
+    """
 
     def set_surface_conditions(self, f1):
         self.surface_conditions = list(f1)
@@ -222,6 +239,26 @@ class VDetector:
         self.QP_wall_Andreev_prob = p1
     def set_triplet_fluorescence_yield(self, p1):
         self.triplet_fluorescence_yield = p1
+    def set_UV_rayleigh_mfp(self, p1):
+        self.UV_rayleigh_mfp = p1
+    def set_vuv_photon_energy(self, p1):
+        self.vuv_photon_energy = p1
+    def set_IR_ion_wall_reflection_prob(self, p1):
+        self.IR_ion_wall_reflection_prob = p1
+    def set_IR_ion_wall_diffuse_prob(self, p1):
+        self.IR_ion_wall_diffuse_prob = p1
+    def set_IR_ion_sensor_reflection_prob(self, p1):
+        self.IR_ion_sensor_reflection_prob = p1
+    def set_IR_ion_sensor_diffuse_prob(self, p1):
+        self.IR_ion_sensor_diffuse_prob = p1
+    def set_IR_exc_wall_reflection_prob(self, p1):
+        self.IR_exc_wall_reflection_prob = p1
+    def set_IR_exc_wall_diffuse_prob(self, p1):
+        self.IR_exc_wall_diffuse_prob = p1
+    def set_IR_exc_sensor_reflection_prob(self, p1):
+        self.IR_exc_sensor_reflection_prob = p1
+    def set_IR_exc_sensor_diffuse_prob(self, p1):
+        self.IR_exc_sensor_diffuse_prob = p1
 
 
     """
@@ -289,6 +326,26 @@ class VDetector:
         return self.QP_wall_Andreev_prob
     def get_triplet_fluorescence_yield(self):
         return self.triplet_fluorescence_yield
+    def get_UV_rayleigh_mfp(self):
+        return self.UV_rayleigh_mfp
+    def get_vuv_photon_energy(self):
+        return self.vuv_photon_energy
+    def get_IR_ion_wall_reflection_prob(self):
+        return self.IR_ion_wall_reflection_prob if self.IR_ion_wall_reflection_prob is not None else self.IR_wall_reflection_prob
+    def get_IR_ion_wall_diffuse_prob(self):
+        return self.IR_ion_wall_diffuse_prob if self.IR_ion_wall_diffuse_prob is not None else self.IR_wall_diffuse_prob
+    def get_IR_ion_sensor_reflection_prob(self):
+        return self.IR_ion_sensor_reflection_prob if self.IR_ion_sensor_reflection_prob is not None else self.IR_sensor_reflection_prob
+    def get_IR_ion_sensor_diffuse_prob(self):
+        return self.IR_ion_sensor_diffuse_prob if self.IR_ion_sensor_diffuse_prob is not None else self.IR_sensor_diffuse_prob
+    def get_IR_exc_wall_reflection_prob(self):
+        return self.IR_exc_wall_reflection_prob if self.IR_exc_wall_reflection_prob is not None else self.IR_wall_reflection_prob
+    def get_IR_exc_wall_diffuse_prob(self):
+        return self.IR_exc_wall_diffuse_prob if self.IR_exc_wall_diffuse_prob is not None else self.IR_wall_diffuse_prob
+    def get_IR_exc_sensor_reflection_prob(self):
+        return self.IR_exc_sensor_reflection_prob if self.IR_exc_sensor_reflection_prob is not None else self.IR_sensor_reflection_prob
+    def get_IR_exc_sensor_diffuse_prob(self):
+        return self.IR_exc_sensor_diffuse_prob if self.IR_exc_sensor_diffuse_prob is not None else self.IR_sensor_diffuse_prob
 
 
 
@@ -951,7 +1008,7 @@ def generate_random_theta_phi(nQPs, min_phi = 0, max_phi = 2*np.pi, min_costheta
     return theta, phi
     
 
-def triplet_fluorescence(surface, directions, positions):
+def triplet_fluorescence(surface, directions, positions, photon_energy=16.0):
     """
     Simulates the kinetmatics of fluorescence of triplets quenching
     on non-detector surfaces. (Essentially just transforms your 
@@ -982,8 +1039,8 @@ def triplet_fluorescence(surface, directions, positions):
     #              dy/np.sqrt(dx*dx + dy*dy + dz*dz),\
     #              dz/np.sqrt(dx*dx + dy*dy + dz*dz)
     
-    energies = np.full_like(dx, 16.0)
-    velocities = np.full_like(dx, 29979.2/1.03)
+    energies = np.full_like(dx, photon_energy)
+    velocities = np.full_like(dx, 29979.2 / HE_REFRACTIVE_INDEX)
 
     return dx, dy, dz, energies, velocities
         
@@ -1512,7 +1569,7 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
 def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_reflection_prob = 0.0,
                        wall_diffuse_prob = 0.0, sensor_reflection_prob = 0.0,  sensor_diffuse_prob = 0.0,
                        max_dist = 10, step_size = .05, plot_3d=False, fixed_dir = None, verbose = False,
-                       photon_energy = 16.0):
+                       photon_energy = 16.0, rayleigh_mfp = None):
     """
     Tracking of photons through medium. 
    
@@ -1576,7 +1633,7 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
     
     alive = np.ones(nPhotons, dtype=int)
     #FIXME: citation for this index of refraction
-    velocity = 29979.2/1.03 #speed of light in He4 cm/us    
+    velocity = 29979.2 / HE_REFRACTIVE_INDEX  # speed of light in LHe, cm/us    
     # cond = (velocity > 0.)
     # alive = np.where( cond, alive, 0.)
     energy = np.ones(nPhotons) * photon_energy
@@ -1597,16 +1654,40 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
         living = ( alive > 0.5 )
    
         X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), np.array([dx, dy, dz]), up_conditions, down_conditions, living, max_dist, step_size)
-  
+
+        #############################
+        # Rayleigh scattering check #
+        #############################
+
+        if rayleigh_mfp is not None and rayleigh_mfp > 0:
+            scatter_dist = np.random.exponential(scale=rayleigh_mfp, size=nPhotons)
+
+            surface_dist = np.full(nPhotons, np.inf)
+            hit_mask = living & (surface_type != -99)
+            miss_mask = living & (surface_type == -99)
+            if hit_mask.any():
+                sd_sq = ((X1[hit_mask]-X[hit_mask])**2 +
+                         (Y1[hit_mask]-Y[hit_mask])**2 +
+                         (Z1[hit_mask]-Z[hit_mask])**2).astype(float)
+                surface_dist[hit_mask] = np.sqrt(sd_sq)
+            surface_dist[miss_mask] = max_dist
+
+            scatter_mask = living & (scatter_dist < surface_dist)
+            if scatter_mask.any():
+                X1[scatter_mask] = X[scatter_mask] + dx[scatter_mask] * scatter_dist[scatter_mask]
+                Y1[scatter_mask] = Y[scatter_mask] + dy[scatter_mask] * scatter_dist[scatter_mask]
+                Z1[scatter_mask] = Z[scatter_mask] + dz[scatter_mask] * scatter_dist[scatter_mask]
+                surface_type[scatter_mask] = -4
+
         hit_surface_check = (surface_type != -99)
-        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
+        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])
 
         alive[living] = np.where( hit_surface_check[living], alive[living], 0)
         living = ( alive > 0.5 )
 
         step_count[living] = np.full_like(alive[living], fill_value=n)
 
-        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
+        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)
         total_time[living] = total_time[living] + np.sqrt(dist_sq)/velocity  #us
 
 
@@ -1618,10 +1699,36 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
         if alive_He_surface_check.any():
             if verbose:
                 print('Crossing Helium/vapor interface')
-        # FIXME: for now, this doesn't account for refraction. It's probably not a huge issue
-            X[alive_He_surface_check] = X1[alive_He_surface_check]  
-            Y[alive_He_surface_check] = Y1[alive_He_surface_check] 
-            Z[alive_He_surface_check] = Z1[alive_He_surface_check] + step_size
+
+            n1 = HE_REFRACTIVE_INDEX
+            sin_theta = np.sqrt(dx[alive_He_surface_check]**2 + dy[alive_He_surface_check]**2)
+            tir_mask = sin_theta > (1.0 / n1)
+
+            tir_full = np.zeros(nPhotons, dtype=bool)
+            tir_full[alive_He_surface_check] = tir_mask
+
+            # Total internal reflection
+            if tir_mask.any():
+                dz[tir_full] = -dz[tir_full]
+                X[tir_full] = X1[tir_full]
+                Y[tir_full] = Y1[tir_full]
+                Z[tir_full] = Z1[tir_full]
+
+            # Snell's law refraction
+            transmit_full = alive_He_surface_check & ~tir_full
+            if transmit_full.any():
+                sin_theta_t = n1 * np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2)
+                cos_theta_t = np.sqrt(np.maximum(1.0 - sin_theta_t**2, 0.0))
+                dx[transmit_full] = n1 * dx[transmit_full]
+                dy[transmit_full] = n1 * dy[transmit_full]
+                dz[transmit_full] = cos_theta_t
+                norm = np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2 + dz[transmit_full]**2)
+                dx[transmit_full] /= norm
+                dy[transmit_full] /= norm
+                dz[transmit_full] /= norm
+                X[transmit_full] = X1[transmit_full]
+                Y[transmit_full] = Y1[transmit_full]
+                Z[transmit_full] = Z1[transmit_full] + step_size
 
 
         ###############################################
@@ -1696,11 +1803,27 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
             Y[alive_at_cell_check] = Y1[alive_at_cell_check]
             Z[alive_at_cell_check] = Z1[alive_at_cell_check]
 
-            #Update alive/energyAtDeath based on absorption at the surface 
+            #Update alive/energyAtDeath based on absorption at the surface
             alive[alive_at_cell_check] = np.where(absorption_cond, 0, alive[alive_at_cell_check])
             energyAtDeath[alive_at_cell_check] = np.where(absorption_cond, energy[alive_at_cell_check], energyAtDeath[alive_at_cell_check])
-       
-        try: 
+
+        ######################################
+        # Managing Rayleigh-scattered photons #
+        ######################################
+
+        if rayleigh_mfp is not None and rayleigh_mfp > 0:
+            scatter_check = living & (surface_type == -4)
+            if scatter_check.any():
+                if verbose:
+                    print("Rayleigh scattered")
+                X[scatter_check] = X1[scatter_check]
+                Y[scatter_check] = Y1[scatter_check]
+                Z[scatter_check] = Z1[scatter_check]
+                n_scat = int(np.sum(scatter_check))
+                dx[scatter_check], dy[scatter_check], dz[scatter_check] = \
+                    generate_random_direction(n_scat)
+
+        try:
             #Add new poisition to path tracking arrays
             particles_x[:, n][living] = X1[living]
             particles_y[:, n][living] = Y1[living]
@@ -1726,7 +1849,8 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
 def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photon_wall_reflection_prob = 0.0,
                        photon_wall_diffuse_prob = 0.0, photon_sensor_reflection_prob = 0.0,  photon_sensor_diffuse_prob = 0.0,
                         fluorescence_yield = 1.0,
-                        max_dist = 10, step_size = .05, verbose = False, plot_3d=False, fixed_dir = None):
+                        max_dist = 10, step_size = .05, verbose = False, plot_3d=False, fixed_dir = None,
+                        rayleigh_mfp = None, photon_energy = 16.0):
     """
     Simulation/Tracking of triplet molecules in helium. Includes:
     - Direct energy deposition via quenching onto sensors
@@ -1761,7 +1885,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
     # Ballistic excimer velocity at T < 110 mK, SVP;
     # Zmeev et al., JLTP 171, 207 (2013)
     velocity = np.full(nTriplets, 0.00017) # 1.7 m/s in cm/us
-    energy = np.full(nTriplets, 16.0)
+    energy = np.full(nTriplets, photon_energy)
     energyAtDeath = np.zeros(nTriplets, dtype=float)
     step_count = np.zeros_like(alive)
     #-1 is default, indicating not hitting  a sensor
@@ -1777,20 +1901,46 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         n+=1
         living = ( alive > 0.5 )
    
-        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]), 
-                                                             np.array([dx, dy, dz]), 
-                                                             up_conditions, down_conditions, 
+        X1, Y1, Z1, surface_type = find_surface_intersection(np.array([X, Y, Z]),
+                                                             np.array([dx, dy, dz]),
+                                                             up_conditions, down_conditions,
                                                              living, max_dist, step_size)
-  
+
+        #####################################################
+        # Rayleigh scattering for post-fluorescence photons #
+        #####################################################
+
+        if rayleigh_mfp is not None and rayleigh_mfp > 0:
+            fluoresced_living = living & (fluoresced > 0.5)
+            if fluoresced_living.any():
+                scatter_dist = np.random.exponential(scale=rayleigh_mfp, size=nTriplets)
+
+                surface_dist = np.full(nTriplets, np.inf)
+                hit_mask = fluoresced_living & (surface_type != -99)
+                miss_mask = fluoresced_living & (surface_type == -99)
+                if hit_mask.any():
+                    sd_sq = ((X1[hit_mask]-X[hit_mask])**2 +
+                             (Y1[hit_mask]-Y[hit_mask])**2 +
+                             (Z1[hit_mask]-Z[hit_mask])**2).astype(float)
+                    surface_dist[hit_mask] = np.sqrt(sd_sq)
+                surface_dist[miss_mask] = max_dist
+
+                scatter_mask = fluoresced_living & (scatter_dist < surface_dist)
+                if scatter_mask.any():
+                    X1[scatter_mask] = X[scatter_mask] + dx[scatter_mask] * scatter_dist[scatter_mask]
+                    Y1[scatter_mask] = Y[scatter_mask] + dy[scatter_mask] * scatter_dist[scatter_mask]
+                    Z1[scatter_mask] = Z[scatter_mask] + dz[scatter_mask] * scatter_dist[scatter_mask]
+                    surface_type[scatter_mask] = -4
+
         hit_surface_check = (surface_type != -99)
-        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])   
+        dx[~hit_surface_check], dy[~hit_surface_check], dz[~hit_surface_check] = np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check]),np.zeros_like(dx[~hit_surface_check])
 
         alive[living] = np.where( hit_surface_check[living], alive[living], 0)
         living = ( alive > 0.5 )
 
         step_count[living] = np.full_like(alive[living], fill_value=n)
 
-        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)      
+        dist_sq = (pow(X1[living]-X[living],2.)+pow(Y1[living]-Y[living], 2.)+pow(Z1[living]-Z[living],2.)).astype(float)
         total_time[living] = total_time[living] + np.sqrt(dist_sq)/velocity[living]  #us
 
         hit_sensor_check  = (surface_type > -.5)
@@ -1840,7 +1990,8 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
                                                                                                            dz[np.flatnonzero(alive_at_sidewall)[fluorescence_cond]]),
                                                                                                           (X1[np.flatnonzero(alive_at_sidewall)[fluorescence_cond]],
                                                                                                            Y1[np.flatnonzero(alive_at_sidewall)[fluorescence_cond]],
-                                                                                                           Z1[np.flatnonzero(alive_at_sidewall)[fluorescence_cond]]))        
+                                                                                                           Z1[np.flatnonzero(alive_at_sidewall)[fluorescence_cond]]),
+                                                                                                          photon_energy=photon_energy)
 
             #Update position
             X[alive_at_sidewall] = X1[alive_at_sidewall]
@@ -1876,7 +2027,8 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
                                                                                                      dz[np.flatnonzero(alive_at_zbound)[fluorescence_cond]]),
                                                                                                     (X1[np.flatnonzero(alive_at_zbound)[fluorescence_cond]],
                                                                                                      Y1[np.flatnonzero(alive_at_zbound)[fluorescence_cond]],
-                                                                                                     Z1[np.flatnonzero(alive_at_zbound)[fluorescence_cond]]))
+                                                                                                     Z1[np.flatnonzero(alive_at_zbound)[fluorescence_cond]]),
+                                                                                                    photon_energy=photon_energy)
 
             #Update position
             X[alive_at_zbound] = X1[alive_at_zbound]
@@ -1915,10 +2067,36 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
         if alive_He_surface_check.any():
             if verbose:
                 print("Photon reached the liquid surface")
-        # FIXME: for now, this doesn't account for refraction
-            X[alive_He_surface_check] = X1[alive_He_surface_check]  
-            Y[alive_He_surface_check] = Y1[alive_He_surface_check] 
-            Z[alive_He_surface_check] = Z1[alive_He_surface_check] + step_size
+
+            n1 = HE_REFRACTIVE_INDEX
+            sin_theta = np.sqrt(dx[alive_He_surface_check]**2 + dy[alive_He_surface_check]**2)
+            tir_mask = sin_theta > (1.0 / n1)
+
+            tir_full = np.zeros(nTriplets, dtype=bool)
+            tir_full[alive_He_surface_check] = tir_mask
+
+            # Total internal reflection
+            if tir_mask.any():
+                dz[tir_full] = -dz[tir_full]
+                X[tir_full] = X1[tir_full]
+                Y[tir_full] = Y1[tir_full]
+                Z[tir_full] = Z1[tir_full]
+
+            # Snell's law refraction
+            transmit_full = alive_He_surface_check & ~tir_full
+            if transmit_full.any():
+                sin_theta_t = n1 * np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2)
+                cos_theta_t = np.sqrt(np.maximum(1.0 - sin_theta_t**2, 0.0))
+                dx[transmit_full] = n1 * dx[transmit_full]
+                dy[transmit_full] = n1 * dy[transmit_full]
+                dz[transmit_full] = cos_theta_t
+                norm = np.sqrt(dx[transmit_full]**2 + dy[transmit_full]**2 + dz[transmit_full]**2)
+                dx[transmit_full] /= norm
+                dy[transmit_full] /= norm
+                dz[transmit_full] /= norm
+                X[transmit_full] = X1[transmit_full]
+                Y[transmit_full] = Y1[transmit_full]
+                Z[transmit_full] = Z1[transmit_full] + step_size
 
 
         ##############################################
@@ -1984,13 +2162,28 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
             Y[alive_at_sensor_check] = Y1[alive_at_sensor_check]
             Z[alive_at_sensor_check] = Z1[alive_at_sensor_check]
 
-            #Update alive/energyAtDeath/sensor IDs based on absorption at the surface 
+            #Update alive/energyAtDeath/sensor IDs based on absorption at the surface
             alive[alive_at_sensor_check] = np.where(absorption_cond, 0, alive[alive_at_sensor_check])
             sensorIdsAll[alive_at_sensor_check] = surface_type[alive_at_sensor_check]
             energyAtDeath[alive_at_sensor_check] = np.where(absorption_cond, energy[alive_at_sensor_check], energyAtDeath[alive_at_sensor_check])
 
+        ######################################
+        # Managing Rayleigh-scattered photons #
+        ######################################
 
-        try: 
+        if rayleigh_mfp is not None and rayleigh_mfp > 0:
+            scatter_check = living & (surface_type == -4)
+            if scatter_check.any():
+                if verbose:
+                    print("Rayleigh scattered")
+                X[scatter_check] = X1[scatter_check]
+                Y[scatter_check] = Y1[scatter_check]
+                Z[scatter_check] = Z1[scatter_check]
+                n_scat = int(np.sum(scatter_check))
+                dx[scatter_check], dy[scatter_check], dz[scatter_check] = \
+                    generate_random_direction(n_scat)
+
+        try:
             #Add new position to path tracking arrays
             particles_x[:, n][living] = X1[living]
             particles_y[:, n][living] = Y1[living]
@@ -2267,13 +2460,15 @@ def GetSingletSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05
         elif detector.get_sensor(i).get_location() == 'bottom':
             down_conditions.append( (detector.get_sensor(i)).get_surface_condition() )
 
-    energyAtDeath, sensorIdsAll, total_time, step_count, paths = photon_propagation(nPhotons, [X,Y,Z], up_conditions, down_conditions, 
+    energyAtDeath, sensorIdsAll, total_time, step_count, paths = photon_propagation(nPhotons, [X,Y,Z], up_conditions, down_conditions,
                                                                                     wall_reflection_prob = detector.get_UV_wall_reflection_prob(),
                                                                                     wall_diffuse_prob = detector.get_UV_wall_diffuse_prob(),
                                                                                     sensor_reflection_prob= detector.get_UV_sensor_reflection_prob(),
                                                                                     sensor_diffuse_prob = detector.get_UV_sensor_diffuse_prob(),
                                                                                     max_dist = max_dist, step_size = step_size,
-                                                                                    plot_3d = plot_3d, fixed_dir = fixed_dir, verbose = verbose)
+                                                                                    plot_3d = plot_3d, fixed_dir = fixed_dir, verbose = verbose,
+                                                                                    rayleigh_mfp = detector.get_UV_rayleigh_mfp(),
+                                                                                    photon_energy = detector.get_vuv_photon_energy())
     
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)
@@ -2312,7 +2507,9 @@ def GetTripletSignal(detector, nTriplets, X,Y,Z, max_dist = 10, step_size = .05,
                                             photon_sensor_diffuse_prob = detector.get_UV_sensor_diffuse_prob(),
                                             fluorescence_yield = detector.get_triplet_fluorescence_yield(),
                                             max_dist = max_dist, step_size = step_size, verbose = verbose,
-                                            plot_3d=plot_3d, fixed_dir = fixed_dir)
+                                            plot_3d=plot_3d, fixed_dir = fixed_dir,
+                                            rayleigh_mfp = detector.get_UV_rayleigh_mfp(),
+                                            photon_energy = detector.get_vuv_photon_energy())
 
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)
@@ -2329,7 +2526,9 @@ def GetTripletSignal(detector, nTriplets, X,Y,Z, max_dist = 10, step_size = .05,
 
 def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, useMap = True,
                 plot_3d = False, fixed_dir = None, verbose = False, debug = False,
-                photon_energy = 2.91):
+                photon_energy = 2.91,
+                wall_reflection_prob = None, wall_diffuse_prob = None,
+                sensor_reflection_prob = None, sensor_diffuse_prob = None):
     """
     Parameters
     ----------
@@ -2394,14 +2593,19 @@ def GetIRSignal(detector, nPhotons, X, Y, Z, max_dist = 10, step_size = .05, use
         elif detector.get_sensor(i).get_location() == 'bottom':
             down_conditions.append( (detector.get_sensor(i)).get_surface_condition() ) 
 
+    _wr = wall_reflection_prob if wall_reflection_prob is not None else detector.get_IR_wall_reflection_prob()
+    _wd = wall_diffuse_prob if wall_diffuse_prob is not None else detector.get_IR_wall_diffuse_prob()
+    _sr = sensor_reflection_prob if sensor_reflection_prob is not None else detector.get_IR_sensor_reflection_prob()
+    _sd = sensor_diffuse_prob if sensor_diffuse_prob is not None else detector.get_IR_sensor_diffuse_prob()
+
     energyAtDeath, sensorIdsAll, total_time, step_count, paths = photon_propagation(nPhotons, [X,Y,Z], up_conditions, down_conditions,
-                                                                                    wall_reflection_prob = detector.get_IR_wall_reflection_prob(),
-                                                                                    wall_diffuse_prob = detector.get_IR_wall_diffuse_prob(),
-                                                                                    sensor_reflection_prob= detector.get_IR_sensor_reflection_prob(),
-                                                                                    sensor_diffuse_prob = detector.get_IR_sensor_diffuse_prob(),
+                                                                                    wall_reflection_prob = _wr,
+                                                                                    wall_diffuse_prob = _wd,
+                                                                                    sensor_reflection_prob = _sr,
+                                                                                    sensor_diffuse_prob = _sd,
                                                                                     max_dist = max_dist, step_size = step_size,
                                                                                     plot_3d = plot_3d, fixed_dir = fixed_dir, verbose = verbose,
-                                                                                    photon_energy = photon_energy )
+                                                                                    photon_energy = photon_energy)
     
     for i in range(nsensors):
         hit_sensor_i = (sensorIdsAll == i)
@@ -2513,9 +2717,17 @@ def Simulate(detector, recoil_type, recoil_energy, X, Y, Z, T = 2.,
         print('Staring IR Sim')
     signal = signal + GetIRSignal(detector, Quanta.get_nIRPhotons_ion(), X = X, Y = Y, Z = Z,
                                   max_dist = max_dist, step_size = step_size,
-                                  photon_energy = IR_ENERGY_PER_IONIZATION )
+                                  photon_energy = IR_ENERGY_PER_IONIZATION,
+                                  wall_reflection_prob = detector.get_IR_ion_wall_reflection_prob(),
+                                  wall_diffuse_prob = detector.get_IR_ion_wall_diffuse_prob(),
+                                  sensor_reflection_prob = detector.get_IR_ion_sensor_reflection_prob(),
+                                  sensor_diffuse_prob = detector.get_IR_ion_sensor_diffuse_prob())
     signal = signal + GetIRSignal(detector, Quanta.get_nIRPhotons_exc(), X = X, Y = Y, Z = Z,
                                   max_dist = max_dist, step_size = step_size,
-                                  photon_energy = IR_ENERGY_PER_EXCITATION )
+                                  photon_energy = IR_ENERGY_PER_EXCITATION,
+                                  wall_reflection_prob = detector.get_IR_exc_wall_reflection_prob(),
+                                  wall_diffuse_prob = detector.get_IR_exc_wall_diffuse_prob(),
+                                  sensor_reflection_prob = detector.get_IR_exc_sensor_reflection_prob(),
+                                  sensor_diffuse_prob = detector.get_IR_exc_sensor_diffuse_prob())
     
     return signal

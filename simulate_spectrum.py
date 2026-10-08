@@ -69,11 +69,27 @@ QP_WALL_REFLECTION_PROB = 0.3       # Probability of QP reflecting off walls
 QP_WALL_DIFFUSE_PROB = 0.0          # Fraction of QP reflections that are diffuse
 QP_SENSOR_REFLECTION_PROB = 0.0     # Probability of QP reflecting off sensors
 
-# Photon channel parameters
-UV_WALL_REFLECTION_PROB = 0.3       # Probability of UV photon reflecting off walls
-UV_WALL_DIFFUSE_PROB = 0.0          # Fraction of UV reflections that are diffuse
-IR_WALL_REFLECTION_PROB = 0.0       # Probability of IR photon reflecting off walls
-IR_WALL_DIFFUSE_PROB = 0.0          # Fraction of IR reflections that are diffuse
+# VUV photon channel parameters (~80 nm singlet / triplet fluorescence)
+VUV_PHOTON_ENERGY = 16.0            # eV; He₂* excimer emission energy
+UV_WALL_REFLECTION_PROB = 0.29      # Cu at 80 nm (Palik, Handbook of Optical Constants, 1991)
+UV_WALL_DIFFUSE_PROB = 1.0          # Machined Cu roughness >> 80 nm wavelength
+UV_SENSOR_REFLECTION_PROB = 0.35    # Si at 80 nm (Palik 1985)
+UV_SENSOR_DIFFUSE_PROB = 0.3        # Polished Si wafer, mostly specular
+UV_RAYLEIGH_MFP = 30.0              # Rayleigh scattering MFP in LHe (cm)
+                                    # Seidel et al., NIM A 489, 189 (2002)
+
+# IR photon channel parameters — ionization (4 eV / 310 nm)
+IR_ION_WALL_REFLECTION_PROB = 0.33  # Cu at 310 nm (Palik 1991)
+IR_ION_WALL_DIFFUSE_PROB = 0.8      # Roughness comparable to wavelength
+IR_ION_SENSOR_REFLECTION_PROB = 0.55  # Si at 310 nm (Palik 1985)
+IR_ION_SENSOR_DIFFUSE_PROB = 0.1    # Polished Si wafer
+
+# IR photon channel parameters — excitation (0.5 eV / 2.5 µm)
+IR_EXC_WALL_REFLECTION_PROB = 0.97  # Cu highly reflective in mid-IR (Palik 1991)
+IR_EXC_WALL_DIFFUSE_PROB = 0.1      # Roughness << wavelength, mostly specular
+IR_EXC_SENSOR_REFLECTION_PROB = 0.30  # Si at 2.5 µm (Palik 1985)
+IR_EXC_SENSOR_DIFFUSE_PROB = 0.05   # Polished Si wafer
+
 TRIPLET_FLUORESCENCE_YIELD = 1.0    # Fraction of wall-incident triplets that fluoresce
                                     # (vs. non-radiative quench). 1.0 for Cu walls
                                     # (HeRALD demo, 2307.11877)
@@ -103,8 +119,18 @@ def get_detector_config():
         qp_sensor_reflection_prob=QP_SENSOR_REFLECTION_PROB,
         uv_wall_reflection_prob=UV_WALL_REFLECTION_PROB,
         uv_wall_diffuse_prob=UV_WALL_DIFFUSE_PROB,
-        ir_wall_reflection_prob=IR_WALL_REFLECTION_PROB,
-        ir_wall_diffuse_prob=IR_WALL_DIFFUSE_PROB,
+        vuv_photon_energy=VUV_PHOTON_ENERGY,
+        uv_sensor_reflection_prob=UV_SENSOR_REFLECTION_PROB,
+        uv_sensor_diffuse_prob=UV_SENSOR_DIFFUSE_PROB,
+        uv_rayleigh_mfp=UV_RAYLEIGH_MFP,
+        ir_ion_wall_reflection_prob=IR_ION_WALL_REFLECTION_PROB,
+        ir_ion_wall_diffuse_prob=IR_ION_WALL_DIFFUSE_PROB,
+        ir_ion_sensor_reflection_prob=IR_ION_SENSOR_REFLECTION_PROB,
+        ir_ion_sensor_diffuse_prob=IR_ION_SENSOR_DIFFUSE_PROB,
+        ir_exc_wall_reflection_prob=IR_EXC_WALL_REFLECTION_PROB,
+        ir_exc_wall_diffuse_prob=IR_EXC_WALL_DIFFUSE_PROB,
+        ir_exc_sensor_reflection_prob=IR_EXC_SENSOR_REFLECTION_PROB,
+        ir_exc_sensor_diffuse_prob=IR_EXC_SENSOR_DIFFUSE_PROB,
         triplet_fluorescence_yield=TRIPLET_FLUORESCENCE_YIELD,
         step_size=STEP_SIZE,
         max_dist=MAX_DIST,
@@ -134,10 +160,20 @@ def build_detector():
     detector.set_QP_wall_reflection_prob(QP_WALL_REFLECTION_PROB)
     detector.set_QP_wall_diffuse_prob(QP_WALL_DIFFUSE_PROB)
     detector.set_QP_sensor_reflection_prob(QP_SENSOR_REFLECTION_PROB)
+    detector.set_vuv_photon_energy(VUV_PHOTON_ENERGY)
     detector.set_UV_wall_reflection_prob(UV_WALL_REFLECTION_PROB)
     detector.set_UV_wall_diffuse_prob(UV_WALL_DIFFUSE_PROB)
-    detector.set_IR_wall_reflection_prob(IR_WALL_REFLECTION_PROB)
-    detector.set_IR_wall_diffuse_prob(IR_WALL_DIFFUSE_PROB)
+    detector.set_UV_sensor_reflection_prob(UV_SENSOR_REFLECTION_PROB)
+    detector.set_UV_sensor_diffuse_prob(UV_SENSOR_DIFFUSE_PROB)
+    detector.set_UV_rayleigh_mfp(UV_RAYLEIGH_MFP)
+    detector.set_IR_ion_wall_reflection_prob(IR_ION_WALL_REFLECTION_PROB)
+    detector.set_IR_ion_wall_diffuse_prob(IR_ION_WALL_DIFFUSE_PROB)
+    detector.set_IR_ion_sensor_reflection_prob(IR_ION_SENSOR_REFLECTION_PROB)
+    detector.set_IR_ion_sensor_diffuse_prob(IR_ION_SENSOR_DIFFUSE_PROB)
+    detector.set_IR_exc_wall_reflection_prob(IR_EXC_WALL_REFLECTION_PROB)
+    detector.set_IR_exc_wall_diffuse_prob(IR_EXC_WALL_DIFFUSE_PROB)
+    detector.set_IR_exc_sensor_reflection_prob(IR_EXC_SENSOR_REFLECTION_PROB)
+    detector.set_IR_exc_sensor_diffuse_prob(IR_EXC_SENSOR_DIFFUSE_PROB)
     detector.set_triplet_fluorescence_yield(TRIPLET_FLUORESCENCE_YIELD)
 
     return detector
@@ -238,10 +274,20 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
         sig = H.HestSignal([[] for _ in range(nsensors)], [[] for _ in range(nsensors)])
         if n_ir_ion > 0:
             sig = sig + H.GetIRSignal(detector, n_ir_ion, x, y, z,
-                                      photon_energy=H.IR_ENERGY_PER_IONIZATION, **sim_kwargs)
+                                      photon_energy=H.IR_ENERGY_PER_IONIZATION,
+                                      wall_reflection_prob=IR_ION_WALL_REFLECTION_PROB,
+                                      wall_diffuse_prob=IR_ION_WALL_DIFFUSE_PROB,
+                                      sensor_reflection_prob=IR_ION_SENSOR_REFLECTION_PROB,
+                                      sensor_diffuse_prob=IR_ION_SENSOR_DIFFUSE_PROB,
+                                      **sim_kwargs)
         if n_ir_exc > 0:
             sig = sig + H.GetIRSignal(detector, n_ir_exc, x, y, z,
-                                      photon_energy=H.IR_ENERGY_PER_EXCITATION, **sim_kwargs)
+                                      photon_energy=H.IR_ENERGY_PER_EXCITATION,
+                                      wall_reflection_prob=IR_EXC_WALL_REFLECTION_PROB,
+                                      wall_diffuse_prob=IR_EXC_WALL_DIFFUSE_PROB,
+                                      sensor_reflection_prob=IR_EXC_SENSOR_REFLECTION_PROB,
+                                      sensor_diffuse_prob=IR_EXC_SENSOR_DIFFUSE_PROB,
+                                      **sim_kwargs)
         collect_signal(sig, 2)
         if save_raw:
             raw_signals[2] = (sig, 1.0)

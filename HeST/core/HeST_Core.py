@@ -27,6 +27,9 @@ NEX_OVER_NI = 0.45
 IR_ENERGY_PER_IONIZATION = 4.0 # eV
 IR_ENERGY_PER_EXCITATION = 0.5 # eV
 
+# Refractive index of liquid helium at VUV (~80 nm)
+HE_REFRACTIVE_INDEX = 1.03
+
 
 # Singlet_ExcitationEnergy = 18.1 # eV; derived from potential curves
 # Triplet_ExcitationEnergy = 17.8 # eV; derived from potential curves
