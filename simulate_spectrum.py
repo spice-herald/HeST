@@ -74,6 +74,9 @@ UV_WALL_REFLECTION_PROB = 0.3       # Probability of UV photon reflecting off wa
 UV_WALL_DIFFUSE_PROB = 0.0          # Fraction of UV reflections that are diffuse
 IR_WALL_REFLECTION_PROB = 0.0       # Probability of IR photon reflecting off walls
 IR_WALL_DIFFUSE_PROB = 0.0          # Fraction of IR reflections that are diffuse
+TRIPLET_FLUORESCENCE_YIELD = 1.0    # Fraction of wall-incident triplets that fluoresce
+                                    # (vs. non-radiative quench). 1.0 for Cu walls
+                                    # (HeRALD demo, 2307.11877)
 
 # Simulation parameters
 STEP_SIZE = 0.05                    # Ray-marching step size in cm
@@ -102,6 +105,7 @@ def get_detector_config():
         uv_wall_diffuse_prob=UV_WALL_DIFFUSE_PROB,
         ir_wall_reflection_prob=IR_WALL_REFLECTION_PROB,
         ir_wall_diffuse_prob=IR_WALL_DIFFUSE_PROB,
+        triplet_fluorescence_yield=TRIPLET_FLUORESCENCE_YIELD,
         step_size=STEP_SIZE,
         max_dist=MAX_DIST,
         qp_temperature=QP_TEMPERATURE,
@@ -134,6 +138,7 @@ def build_detector():
     detector.set_UV_wall_diffuse_prob(UV_WALL_DIFFUSE_PROB)
     detector.set_IR_wall_reflection_prob(IR_WALL_REFLECTION_PROB)
     detector.set_IR_wall_diffuse_prob(IR_WALL_DIFFUSE_PROB)
+    detector.set_triplet_fluorescence_yield(TRIPLET_FLUORESCENCE_YIELD)
 
     return detector
 

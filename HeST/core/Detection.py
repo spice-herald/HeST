@@ -124,10 +124,11 @@ class VDetector:
                  UV_sensor_reflection_prob=0., UV_sensor_diffuse_prob=0., UV_wall_reflection_prob=0., UV_wall_diffuse_prob=0.,
                  IR_sensor_reflection_prob=0., IR_sensor_diffuse_prob=0., IR_wall_reflection_prob=0., IR_wall_diffuse_prob=0.,
                  QP_sensor_reflection_prob=0., QP_sensor_diffuse_prob=0., QP_sensor_Andreev_prob=0.,
-                 QP_wall_reflection_prob=0., QP_wall_diffuse_prob=0., QP_wall_Andreev_prob=0.):
-        
+                 QP_wall_reflection_prob=0., QP_wall_diffuse_prob=0., QP_wall_Andreev_prob=0.,
+                 triplet_fluorescence_yield=1.0):
 
-        
+
+
         self.top_condition     = top_conditions
         self.bottom_condition   = bottom_conditions
         self.wall_conditions    = wall_conditions
@@ -157,8 +158,9 @@ class VDetector:
         self.QP_wall_diffuse_prob = QP_wall_diffuse_prob
         self.QP_wall_Andreev_prob = QP_wall_Andreev_prob
 
-        
-        
+        self.triplet_fluorescence_yield = triplet_fluorescence_yield
+
+
     """
     Setters
     """   
@@ -218,6 +220,8 @@ class VDetector:
         self.QP_wall_diffuse_prob = p1
     def set_QP_wall_Andreev_prob(self, p1):
         self.QP_wall_Andreev_prob = p1
+    def set_triplet_fluorescence_yield(self, p1):
+        self.triplet_fluorescence_yield = p1
 
 
     """
@@ -283,8 +287,10 @@ class VDetector:
         return self.QP_wall_diffuse_prob
     def get_QP_wall_Andreev_prob(self):
         return self.QP_wall_Andreev_prob
+    def get_triplet_fluorescence_yield(self):
+        return self.triplet_fluorescence_yield
 
-    
+
 
 
     def load_LCEmap(self, filename):
@@ -1717,8 +1723,9 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
     return energyAtDeath, sensorIdsAll, total_time, step_count, paths
 
 
-def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photon_wall_reflection_prob = 0.0, 
+def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photon_wall_reflection_prob = 0.0,
                        photon_wall_diffuse_prob = 0.0, photon_sensor_reflection_prob = 0.0,  photon_sensor_diffuse_prob = 0.0,
+                        fluorescence_yield = 1.0,
                         max_dist = 10, step_size = .05, verbose = False, plot_3d=False, fixed_dir = None):
     """
     Simulation/Tracking of triplet molecules in helium. Includes:
@@ -1820,7 +1827,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
                 print("Triplet reached a sidewall")
 
             fluorescence = np.random.random(len(surface_type[alive_at_sidewall]))
-            fluorescence_cond = (fluorescence > 0)
+            fluorescence_cond = (fluorescence < fluorescence_yield)
 
             if len(np.flatnonzero(alive_at_sidewall)[fluorescence_cond]) > 0:
                     dx[np.flatnonzero(alive_at_sidewall)[fluorescence_cond]],\
@@ -1856,7 +1863,7 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
                 print("Triplet reached a floor/ceiling")
 
             fluorescence = np.random.random(len(surface_type[alive_at_zbound]))
-            fluorescence_cond = (fluorescence > 0)
+            fluorescence_cond = (fluorescence < fluorescence_yield)
 
             if len(np.flatnonzero(alive_at_zbound)[fluorescence_cond]) > 0:
                 dx[np.flatnonzero(alive_at_zbound)[fluorescence_cond]],\
@@ -2303,6 +2310,7 @@ def GetTripletSignal(detector, nTriplets, X,Y,Z, max_dist = 10, step_size = .05,
                                             photon_wall_diffuse_prob = detector.get_UV_wall_diffuse_prob(),
                                             photon_sensor_reflection_prob= detector.get_UV_sensor_reflection_prob(),
                                             photon_sensor_diffuse_prob = detector.get_UV_sensor_diffuse_prob(),
+                                            fluorescence_yield = detector.get_triplet_fluorescence_yield(),
                                             max_dist = max_dist, step_size = step_size, verbose = verbose,
                                             plot_3d=plot_3d, fixed_dir = fixed_dir)
 
