@@ -1846,13 +1846,11 @@ def photon_propagation(nPhotons, start, up_conditions, down_conditions, wall_ref
                     generate_random_direction(n_scat)
 
         try:
-            #Add new poisition to path tracking arrays
             particles_x[:, n][living] = X1[living]
             particles_y[:, n][living] = Y1[living]
             particles_z[:, n][living] = Z1[living]
         except IndexError:
-            print('one track has gone on for more than 100 steps')
-            break
+            pass
 
     if plot_3d:
         ax = plt.figure().add_subplot(projection ='3d')
@@ -2225,13 +2223,11 @@ def triplet_propagation(nTriplets, start, up_conditions, down_conditions,  photo
                     generate_random_direction(n_scat)
 
         try:
-            #Add new position to path tracking arrays
             particles_x[:, n][living] = X1[living]
             particles_y[:, n][living] = Y1[living]
             particles_z[:, n][living] = Z1[living]
         except IndexError:
-            print('one track has gone on for more than 100 steps')
-            break
+            pass
     if plot_3d:
         ax = plt.figure().add_subplot(projection ='3d')
         for i in range(nTriplets ):

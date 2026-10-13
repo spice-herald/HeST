@@ -389,6 +389,8 @@ def generate_output_name(args):
         parts.append(f"file_{base}")
 
     parts.append(f"nEvents_{args.n_events}")
+    if args.seed is not None:
+        parts.append(f"seed_{args.seed}")
     parts.append(geom_short)
 
     return "_".join(parts) + ".npz"
@@ -429,7 +431,12 @@ def main():
                         help="Fano factor for triplet channel (overrides config block)")
     parser.add_argument("--fano_ir", type=float, default=None,
                         help="Fano factor for IR channel (overrides config block)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for reproducibility")
     args = parser.parse_args()
+
+    if args.seed is not None:
+        np.random.seed(args.seed)
 
     global MAX_QP_SIMULATED, FANO_SINGLET, FANO_TRIPLET, FANO_IR
     if args.max_qp is not None:
@@ -544,6 +551,7 @@ def main():
         mean_arrival_time=mean_arrival_time,
         spectrum_mode=np.array(args.spectrum),
         detector_config=np.array(get_detector_config()),
+        random_seed=np.array(args.seed if args.seed is not None else -1),
     )
 
     if args.per_sensor:
