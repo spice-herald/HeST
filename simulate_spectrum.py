@@ -69,11 +69,35 @@ QP_WALL_REFLECTION_PROB = 0.3       # Probability of QP reflecting off walls
 QP_WALL_DIFFUSE_PROB = 0.0          # Fraction of QP reflections that are diffuse
 QP_SENSOR_REFLECTION_PROB = 0.0     # Probability of QP reflecting off sensors
 
-# Photon channel parameters
-UV_WALL_REFLECTION_PROB = 0.3       # Probability of UV photon reflecting off walls
-UV_WALL_DIFFUSE_PROB = 0.0          # Fraction of UV reflections that are diffuse
-IR_WALL_REFLECTION_PROB = 0.0       # Probability of IR photon reflecting off walls
-IR_WALL_DIFFUSE_PROB = 0.0          # Fraction of IR reflections that are diffuse
+# VUV photon channel parameters (~80 nm singlet / triplet fluorescence)
+VUV_PHOTON_ENERGY = 16.0            # eV; He₂* excimer emission energy
+UV_WALL_REFLECTION_PROB = 0.29      # Cu at 80 nm (Palik, Handbook of Optical Constants, 1991)
+UV_WALL_DIFFUSE_PROB = 1.0          # Machined Cu roughness >> 80 nm wavelength
+UV_SENSOR_REFLECTION_PROB = 0.35    # Si at 80 nm (Palik 1985)
+UV_SENSOR_DIFFUSE_PROB = 0.3        # Polished Si wafer, mostly specular
+UV_RAYLEIGH_MFP = 30.0              # Rayleigh scattering MFP in LHe (cm)
+                                    # Seidel et al., NIM A 489, 189 (2002)
+
+# IR photon channel parameters — ionization (4 eV / 310 nm)
+IR_ION_WALL_REFLECTION_PROB = 0.33  # Cu at 310 nm (Palik 1991)
+IR_ION_WALL_DIFFUSE_PROB = 0.8      # Roughness comparable to wavelength
+IR_ION_SENSOR_REFLECTION_PROB = 0.55  # Si at 310 nm (Palik 1985)
+IR_ION_SENSOR_DIFFUSE_PROB = 0.1    # Polished Si wafer
+
+# IR photon channel parameters — excitation (0.5 eV / 2.5 µm)
+IR_EXC_WALL_REFLECTION_PROB = 0.97  # Cu highly reflective in mid-IR (Palik 1991)
+IR_EXC_WALL_DIFFUSE_PROB = 0.1      # Roughness << wavelength, mostly specular
+IR_EXC_SENSOR_REFLECTION_PROB = 0.30  # Si at 2.5 µm (Palik 1985)
+IR_EXC_SENSOR_DIFFUSE_PROB = 0.05   # Polished Si wafer
+
+TRIPLET_FLUORESCENCE_YIELD = 1.0    # Fraction of wall-incident triplets that fluoresce
+                                    # (vs. non-radiative quench). 1.0 for Cu walls
+                                    # (HeRALD demo, 2307.11877)
+
+# Singlet:triplet branching ratio
+SINGLET_FRACTION = None             # Fraction of total UV energy in singlet channel.
+                                    # None = use digitized Hertel yield curves (energy-dependent).
+                                    # 0.5 = equal energy split. Effective r~0.6 at high ER.
 
 # Simulation parameters
 STEP_SIZE = 0.05                    # Ray-marching step size in cm
@@ -100,8 +124,19 @@ def get_detector_config():
         qp_sensor_reflection_prob=QP_SENSOR_REFLECTION_PROB,
         uv_wall_reflection_prob=UV_WALL_REFLECTION_PROB,
         uv_wall_diffuse_prob=UV_WALL_DIFFUSE_PROB,
-        ir_wall_reflection_prob=IR_WALL_REFLECTION_PROB,
-        ir_wall_diffuse_prob=IR_WALL_DIFFUSE_PROB,
+        vuv_photon_energy=VUV_PHOTON_ENERGY,
+        uv_sensor_reflection_prob=UV_SENSOR_REFLECTION_PROB,
+        uv_sensor_diffuse_prob=UV_SENSOR_DIFFUSE_PROB,
+        uv_rayleigh_mfp=UV_RAYLEIGH_MFP,
+        ir_ion_wall_reflection_prob=IR_ION_WALL_REFLECTION_PROB,
+        ir_ion_wall_diffuse_prob=IR_ION_WALL_DIFFUSE_PROB,
+        ir_ion_sensor_reflection_prob=IR_ION_SENSOR_REFLECTION_PROB,
+        ir_ion_sensor_diffuse_prob=IR_ION_SENSOR_DIFFUSE_PROB,
+        ir_exc_wall_reflection_prob=IR_EXC_WALL_REFLECTION_PROB,
+        ir_exc_wall_diffuse_prob=IR_EXC_WALL_DIFFUSE_PROB,
+        ir_exc_sensor_reflection_prob=IR_EXC_SENSOR_REFLECTION_PROB,
+        ir_exc_sensor_diffuse_prob=IR_EXC_SENSOR_DIFFUSE_PROB,
+        triplet_fluorescence_yield=TRIPLET_FLUORESCENCE_YIELD,
         step_size=STEP_SIZE,
         max_dist=MAX_DIST,
         qp_temperature=QP_TEMPERATURE,
@@ -109,6 +144,7 @@ def get_detector_config():
         fano_singlet=FANO_SINGLET,
         fano_triplet=FANO_TRIPLET,
         fano_ir=FANO_IR,
+        singlet_fraction=SINGLET_FRACTION,
     )
 
 
@@ -130,10 +166,21 @@ def build_detector():
     detector.set_QP_wall_reflection_prob(QP_WALL_REFLECTION_PROB)
     detector.set_QP_wall_diffuse_prob(QP_WALL_DIFFUSE_PROB)
     detector.set_QP_sensor_reflection_prob(QP_SENSOR_REFLECTION_PROB)
+    detector.set_vuv_photon_energy(VUV_PHOTON_ENERGY)
     detector.set_UV_wall_reflection_prob(UV_WALL_REFLECTION_PROB)
     detector.set_UV_wall_diffuse_prob(UV_WALL_DIFFUSE_PROB)
-    detector.set_IR_wall_reflection_prob(IR_WALL_REFLECTION_PROB)
-    detector.set_IR_wall_diffuse_prob(IR_WALL_DIFFUSE_PROB)
+    detector.set_UV_sensor_reflection_prob(UV_SENSOR_REFLECTION_PROB)
+    detector.set_UV_sensor_diffuse_prob(UV_SENSOR_DIFFUSE_PROB)
+    detector.set_UV_rayleigh_mfp(UV_RAYLEIGH_MFP)
+    detector.set_IR_ion_wall_reflection_prob(IR_ION_WALL_REFLECTION_PROB)
+    detector.set_IR_ion_wall_diffuse_prob(IR_ION_WALL_DIFFUSE_PROB)
+    detector.set_IR_ion_sensor_reflection_prob(IR_ION_SENSOR_REFLECTION_PROB)
+    detector.set_IR_ion_sensor_diffuse_prob(IR_ION_SENSOR_DIFFUSE_PROB)
+    detector.set_IR_exc_wall_reflection_prob(IR_EXC_WALL_REFLECTION_PROB)
+    detector.set_IR_exc_wall_diffuse_prob(IR_EXC_WALL_DIFFUSE_PROB)
+    detector.set_IR_exc_sensor_reflection_prob(IR_EXC_SENSOR_REFLECTION_PROB)
+    detector.set_IR_exc_sensor_diffuse_prob(IR_EXC_SENSOR_DIFFUSE_PROB)
+    detector.set_triplet_fluorescence_yield(TRIPLET_FLUORESCENCE_YIELD)
 
     return detector
 
@@ -165,10 +212,13 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
     raw_signals : list of (HestSignal, weight) or None — raw signal objects per channel
     """
     quanta = H.GetQuanta(energy, recoil_type, T=QP_TEMPERATURE,
-                         fano_singlet=fano_singlet, fano_triplet=fano_triplet, fano_IR=fano_ir)
+                         fano_singlet=fano_singlet, fano_triplet=fano_triplet, fano_IR=fano_ir,
+                         singlet_fraction=SINGLET_FRACTION)
     n_singlet = quanta.get_nSingletPhotons()
     n_triplet = quanta.get_nTripletMolecules()
     n_ir = quanta.get_nIRPhotons()
+    n_ir_ion = quanta.get_nIRPhotons_ion()
+    n_ir_exc = quanta.get_nIRPhotons_exc()
     n_qp = quanta.get_nQuasiparticles()
 
     n_generated = np.array([n_singlet, n_triplet, n_ir, n_qp])
@@ -228,7 +278,23 @@ def simulate_event(detector, energy, recoil_type, save_per_sensor=False,
             raw_signals[1] = (sig, 1.0)
 
     if n_ir > 0:
-        sig = H.GetIRSignal(detector, n_ir, x, y, z, **sim_kwargs)
+        sig = H.HestSignal([[] for _ in range(nsensors)], [[] for _ in range(nsensors)])
+        if n_ir_ion > 0:
+            sig = sig + H.GetIRSignal(detector, n_ir_ion, x, y, z,
+                                      photon_energy=H.IR_ENERGY_PER_IONIZATION,
+                                      wall_reflection_prob=IR_ION_WALL_REFLECTION_PROB,
+                                      wall_diffuse_prob=IR_ION_WALL_DIFFUSE_PROB,
+                                      sensor_reflection_prob=IR_ION_SENSOR_REFLECTION_PROB,
+                                      sensor_diffuse_prob=IR_ION_SENSOR_DIFFUSE_PROB,
+                                      **sim_kwargs)
+        if n_ir_exc > 0:
+            sig = sig + H.GetIRSignal(detector, n_ir_exc, x, y, z,
+                                      photon_energy=H.IR_ENERGY_PER_EXCITATION,
+                                      wall_reflection_prob=IR_EXC_WALL_REFLECTION_PROB,
+                                      wall_diffuse_prob=IR_EXC_WALL_DIFFUSE_PROB,
+                                      sensor_reflection_prob=IR_EXC_SENSOR_REFLECTION_PROB,
+                                      sensor_diffuse_prob=IR_EXC_SENSOR_DIFFUSE_PROB,
+                                      **sim_kwargs)
         collect_signal(sig, 2)
         if save_raw:
             raw_signals[2] = (sig, 1.0)
@@ -323,6 +389,8 @@ def generate_output_name(args):
         parts.append(f"file_{base}")
 
     parts.append(f"nEvents_{args.n_events}")
+    if args.seed is not None:
+        parts.append(f"seed_{args.seed}")
     parts.append(geom_short)
 
     return "_".join(parts) + ".npz"
@@ -363,7 +431,12 @@ def main():
                         help="Fano factor for triplet channel (overrides config block)")
     parser.add_argument("--fano_ir", type=float, default=None,
                         help="Fano factor for IR channel (overrides config block)")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for reproducibility")
     args = parser.parse_args()
+
+    if args.seed is not None:
+        np.random.seed(args.seed)
 
     global MAX_QP_SIMULATED, FANO_SINGLET, FANO_TRIPLET, FANO_IR
     if args.max_qp is not None:
@@ -478,6 +551,7 @@ def main():
         mean_arrival_time=mean_arrival_time,
         spectrum_mode=np.array(args.spectrum),
         detector_config=np.array(get_detector_config()),
+        random_seed=np.array(args.seed if args.seed is not None else -1),
     )
 
     if args.per_sensor:
