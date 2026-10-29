@@ -4,7 +4,8 @@ import re
 import matplotlib.pyplot as plt
 from .HeST_Core import HestSignal, Random_QPmomentum, QP_dispersion, QP_velocity, get_phonon_mom_energy, get_rminus_mom_energy, \
                        get_rplus_mom_energy, phonon_momentum, rminus_momentum, rplus_momentum, QuantaResult, GetQuanta, \
-                       IR_ENERGY_PER_IONIZATION, IR_ENERGY_PER_EXCITATION, HE_REFRACTIVE_INDEX
+                       IR_ENERGY_PER_IONIZATION, IR_ENERGY_PER_EXCITATION, HE_REFRACTIVE_INDEX, \
+                       MAXON_MOMENTUM, ROTON_MIN_MOMENTUM, PHONON_EVAP_ONSET, MAX_STABLE_MOMENTUM
 from numba import jit
 import os
 from skimage import measure
@@ -930,9 +931,9 @@ def Andreev_reflection(surface, momenta, energies,  pos = (0.0,0.0,0.0), dir = (
     can_convert_to_rminus = np.full_like(momenta, True)
 
     #Particle should not convert to the same flavor if possible; specular reflection handles this
-    can_convert_to_phonon = can_convert_to_phonon & (np.abs(momenta) >  2.22538686)
-    can_convert_to_rplus = can_convert_to_rplus & (np.abs(momenta) < 3.84035444)
-    can_convert_to_rminus = can_convert_to_rminus & ( (np.abs(momenta) < 2.22538686) | (np.abs(momenta) > 3.84035444) )
+    can_convert_to_phonon = can_convert_to_phonon & (np.abs(momenta) > MAXON_MOMENTUM)
+    can_convert_to_rplus = can_convert_to_rplus & (np.abs(momenta) < ROTON_MIN_MOMENTUM)
+    can_convert_to_rminus = can_convert_to_rminus & ( (np.abs(momenta) < MAXON_MOMENTUM) | (np.abs(momenta) > ROTON_MIN_MOMENTUM) )
 
     #calculating surface normal vectors (outward-going)
     if surface == 'XY':
@@ -943,7 +944,7 @@ def Andreev_reflection(surface, momenta, energies,  pos = (0.0,0.0,0.0), dir = (
         nx, ny = x*0, x*0
         nz = np.sign(dir[2])
 
-    cos = nx * dir[0] + ny * dir[1] * nz * dir[2]
+    cos = nx * dir[0] + ny * dir[1] + nz * dir[2]
     transverse_momenta = np.sqrt(1 - cos**2) * momenta
 
     #Account for transformations forbidden by conservation laws
@@ -971,7 +972,7 @@ def Andreev_reflection(surface, momenta, energies,  pos = (0.0,0.0,0.0), dir = (
 
     dx, dy, dz = -nx * normal_momenta + tx * sign * transverse_momenta, -ny * normal_momenta + ty * sign * transverse_momenta, -nz * normal_momenta + tz * sign * transverse_momenta
     dx, dy, dz = dx/np.sqrt(dx*dx + dy*dy + dz*dz), dy/np.sqrt(dx*dx + dy*dy + dz*dz), dz/np.sqrt(dx*dx + dy*dy + dz*dz)
-    return dx, dy, dz, momenta, QP_dispersion(momenta), QP_velocity(momenta)
+    return dx, dy, dz, final_momenta, QP_dispersion(final_momenta), QP_velocity(final_momenta)
 
 
 def generate_random_direction(nQPs, min_phi = 0, max_phi = 2*np.pi, min_costheta = -1, max_costheta = 1):
@@ -1115,10 +1116,10 @@ def evap_prob(p, a=1, b=1):
     if a > 1 or b > 1 or a < 0 or b < 0:
         raise(ValueError("a must lie between 0 and 1"))
 
-    low_cutoff = .750
-    maxon_p = 2.180
-    rotmin_p = 3.809
-    high_cutoff = 4.544
+    low_cutoff = PHONON_EVAP_ONSET
+    maxon_p = MAXON_MOMENTUM
+    rotmin_p = ROTON_MIN_MOMENTUM
+    high_cutoff = MAX_STABLE_MOMENTUM
     
     cond_list = [(p < low_cutoff),
                  (p >= low_cutoff) & (p < maxon_p),
@@ -1340,7 +1341,7 @@ def QP_propagation(nQPs, start, up_QP_conditions, down_conditions, up_atom_condi
     if track_subevap_QPs and track_unstable_QPs:
         cond = True  
     elif track_unstable_QPs and not track_subevap_QPs:
-        cond = (momentum <  .78)
+        cond = (momentum <  .83)
     elif not track_unstable_QPs and not track_subevap_QPs:
         cond = (momentum <  1.10) 
     else:

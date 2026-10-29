@@ -30,6 +30,13 @@ IR_ENERGY_PER_EXCITATION = 0.5 # eV
 # Refractive index of liquid helium at VUV (~80 nm)
 HE_REFRACTIVE_INDEX = 1.03
 
+# Dispersion relation feature points (keV/c)
+# Parabolic interpolation of digitized Donnelly et al., JLTP 93, 1-34 (1993)
+MAXON_MOMENTUM = 2.18       # local maximum of phonon branch
+ROTON_MIN_MOMENTUM = 3.81   # local minimum (roton gap)
+PHONON_EVAP_ONSET = 0.75    # phonon momentum where E(p) ~ Vb
+MAX_STABLE_MOMENTUM = 4.54  # upper bound of stable QP window
+
 
 # Singlet_ExcitationEnergy = 18.1 # eV; derived from potential curves
 # Triplet_ExcitationEnergy = 17.8 # eV; derived from potential curves
