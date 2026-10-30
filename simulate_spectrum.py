@@ -58,16 +58,32 @@ import HeST as H
 # ============================================================
 # DETECTOR CONFIGURATION — edit this section before running
 # ============================================================
-DETECTOR_GEOMETRY = "HeRALD_v1"     # Options: HeRALD_v1, HeRALD_v1_monolithic,
-                                    #          HeRALD_LBNL, HeRALD_UMass_splitCPD,
-                                    #          HeRALD_UMass_monolithic
-FILL_HEIGHT = 4.5                   # Helium fill height in cm
-CELL_RADIUS = 3.5                   # Cell radius in cm (used for position sampling)
+DETECTOR_GEOMETRY = "HeRALD_LBNL_TopOnly"   # Options: HeRALD_v1, HeRALD_v1_monolithic,
+                                            #          HeRALD_LBNL, HeRALD_LBNL_TopOnly,
+                                            #          HeRALD_UMass_splitCPD, HeRALD_UMass_monolithic
+
+# Geometry-matched defaults for fill height and cell radius.
+# Set to None to use the built-in default for the chosen geometry,
+# or override with a specific value.
+_GEOMETRY_DEFAULTS = {
+    "HeRALD_v1":              {"fill_height": 4.8, "cell_radius": 3.5},
+    "HeRALD_v1_monolithic":   {"fill_height": 4.8, "cell_radius": 3.5},
+    "HeRALD_LBNL":            {"fill_height": 3.0, "cell_radius": 2.381},
+    "HeRALD_LBNL_TopOnly":    {"fill_height": 3.0, "cell_radius": 2.381},
+    "HeRALD_UMass_splitCPD":  {"fill_height": 2.7, "cell_radius": 3.5},
+    "HeRALD_UMass_monolithic":{"fill_height": 2.77,"cell_radius": 3.5},
+}
+_defaults = _GEOMETRY_DEFAULTS.get(DETECTOR_GEOMETRY, {"fill_height": 4.8, "cell_radius": 3.5})
+FILL_HEIGHT = _defaults["fill_height"]   # Helium fill height in cm (auto from geometry)
+CELL_RADIUS = _defaults["cell_radius"]   # Cell radius in cm (auto from geometry)
 
 # QP channel parameters
 QP_WALL_REFLECTION_PROB = 0.3       # Probability of QP reflecting off walls
 QP_WALL_DIFFUSE_PROB = 0.0          # Fraction of QP reflections that are diffuse
+QP_WALL_ANDREEV_PROB = 0.0          # Probability of Andreev reflection off walls
 QP_SENSOR_REFLECTION_PROB = 0.0     # Probability of QP reflecting off sensors
+QP_SENSOR_DIFFUSE_PROB = 0.0        # Fraction of QP sensor reflections that are diffuse
+QP_SENSOR_ANDREEV_PROB = 0.0        # Probability of Andreev reflection off sensors
 
 # VUV photon channel parameters (~80 nm singlet / triplet fluorescence)
 VUV_PHOTON_ENERGY = 16.0            # eV; He₂* excimer emission energy
@@ -121,7 +137,14 @@ def get_detector_config():
         cell_radius=CELL_RADIUS,
         qp_wall_reflection_prob=QP_WALL_REFLECTION_PROB,
         qp_wall_diffuse_prob=QP_WALL_DIFFUSE_PROB,
+        qp_wall_andreev_prob=QP_WALL_ANDREEV_PROB,
         qp_sensor_reflection_prob=QP_SENSOR_REFLECTION_PROB,
+        qp_sensor_diffuse_prob=QP_SENSOR_DIFFUSE_PROB,
+        qp_sensor_andreev_prob=QP_SENSOR_ANDREEV_PROB,
+        maxon_momentum=H.MAXON_MOMENTUM,
+        roton_min_momentum=H.ROTON_MIN_MOMENTUM,
+        phonon_evap_onset=H.PHONON_EVAP_ONSET,
+        max_stable_momentum=H.MAX_STABLE_MOMENTUM,
         uv_wall_reflection_prob=UV_WALL_REFLECTION_PROB,
         uv_wall_diffuse_prob=UV_WALL_DIFFUSE_PROB,
         vuv_photon_energy=VUV_PHOTON_ENERGY,
@@ -154,6 +177,7 @@ def build_detector():
         "HeRALD_v1": H.HeRALD_v1,
         "HeRALD_v1_monolithic": H.HeRALD_v1_monolithic,
         "HeRALD_LBNL": H.HeRALD_LBNL,
+        "HeRALD_LBNL_TopOnly": H.HeRALD_LBNL_TopOnly,
         "HeRALD_UMass_splitCPD": H.HeRALD_UMass_splitCPD,
         "HeRALD_UMass_monolithic": H.HeRALD_UMass_monolithic,
     }
@@ -165,7 +189,10 @@ def build_detector():
 
     detector.set_QP_wall_reflection_prob(QP_WALL_REFLECTION_PROB)
     detector.set_QP_wall_diffuse_prob(QP_WALL_DIFFUSE_PROB)
+    detector.set_QP_wall_Andreev_prob(QP_WALL_ANDREEV_PROB)
     detector.set_QP_sensor_reflection_prob(QP_SENSOR_REFLECTION_PROB)
+    detector.set_QP_sensor_diffuse_prob(QP_SENSOR_DIFFUSE_PROB)
+    detector.set_QP_sensor_Andreev_prob(QP_SENSOR_ANDREEV_PROB)
     detector.set_vuv_photon_energy(VUV_PHOTON_ENERGY)
     detector.set_UV_wall_reflection_prob(UV_WALL_REFLECTION_PROB)
     detector.set_UV_wall_diffuse_prob(UV_WALL_DIFFUSE_PROB)

@@ -285,6 +285,92 @@ def HeRALD_LBNL(fill_height=3):
                      UV_wall_diffuse_prob = 1.0)
 
 
+def HeRALD_LBNL_TopOnly(fill_height=3):
+
+    cell_rad = 2.381 # cm
+    cell_rad_sq = cell_rad*cell_rad
+    sensor_Z_pitch = 3.73
+    sensor_XY_pitch = 1.14
+    sensor_thickness = .1 # cm
+    sensor_width = 1
+
+    @njit
+    def sensor_top(x,y,z,x0,y0,z0):
+        return (np.abs(x-x0) > sensor_width/2) | (np.abs(y-y0) > sensor_width/2) | (z < z0 - sensor_thickness/2)
+
+    def sensor_condition_top(x,y,z,x0,y0,z0, index):
+        return sensor_top(x,y,z,x0,y0,z0), index
+
+    def create_sensors_condition_top(x0,y0,z0, index):
+        return lambda x,y,z: sensor_condition_top(x,y,z, x0, y0, z0, index)
+
+    array_map = np.array([[1,1],
+                          [1,1]])
+
+    sensor_conditions = []
+    sensor_locations = {}
+    sensor_id = 0
+
+    for i in range(array_map.shape[0]):
+        for j in range(array_map.shape[1]):
+            if array_map[i,j] > .5:
+                x0, y0 = (i - .5)*sensor_XY_pitch, (j - .5)*sensor_XY_pitch,
+                sensor_conditions.append(create_sensors_condition_top(x0,y0, sensor_Z_pitch, int(sensor_id)))
+                sensor_locations[str(sensor_id)] = (x0,y0)
+                sensor_id += 1
+
+    sensors = []
+    for condition in sensor_conditions:
+        sensors.append(VSensor(condition, location='top'))
+
+    @njit
+    def bottom(x,y,z):
+        return (z > 0)
+
+    def bottom_conditions(x, y, z):
+        return bottom(x,y,z), -1
+
+    @njit
+    def top(x,y,z):
+        return (z < sensor_Z_pitch)
+
+    def top_conditions(x,y,z):
+        return top(x,y,z), -1
+
+    @njit
+    def wall(x,y,z):
+        return (x*x + y*y < cell_rad_sq)
+
+    def wall_conditions(x, y, z):
+        return wall(x,y,z), -2
+
+    @njit
+    def liquid(x,y,z):
+        return (z < fill_height)
+
+    def liquid_surface(x, y, z):
+        return liquid(x,y,z), -3
+
+    @njit
+    def liquid_conditions(x, y, z):
+        return ((x*x + y*y < cell_rad_sq) & (z < fill_height) & (z > 0))
+
+    return VDetector(top_conditions,
+                     bottom_conditions,
+                     wall_conditions,
+                     liquid_surface,
+                     liquid_conditions,
+                     sensors = sensors,
+                     QP_wall_reflection_prob=.3,
+                     QP_wall_diffuse_prob=1.0,
+                     QP_wall_Andreev_prob=0.0,
+                     QP_sensor_reflection_prob = 0,
+                     QP_sensor_diffuse_prob = 0,
+                     QP_sensor_Andreev_prob=0.0,
+                     UV_wall_reflection_prob = .3,
+                     UV_wall_diffuse_prob = 1.0)
+
+
 def HeRALD_UMass_splitCPD(fill_height = 2.7):
     cell_rad = 3.5 #cm
     CPD_height = 3
